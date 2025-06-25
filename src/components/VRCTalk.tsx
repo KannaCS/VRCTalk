@@ -289,26 +289,27 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     setRecognitionActive(!recognitionActive);
   };
 
+  // UI component return
   return (
-    <div className="flex flex-col space-y-5">
+    <div className="flex flex-col space-y-4">
       {/* Header section with status indicators */}
-      <div className="card p-5 animate-slide-up">
-        <div className="flex flex-col md:flex-row justify-between items-center md:space-x-4 space-y-3 md:space-y-0">
+      <div className="card p-4 animate-slide-up">
+        <div className="flex flex-col md:flex-row justify-between items-center md:space-x-4 space-y-2 md:space-y-0">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-1">VRC Talk</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-0.5">VRC Talk</h2>
             <p className="text-gray-600 text-sm">Translating from <span className="font-medium">{langSource[findLangSourceIndex(sourceLanguage)].name}</span> to <span className="font-medium">{langTo[findLangToIndex(targetLanguage)].name}</span></p>
           </div>
           
           <div className="flex items-center space-x-4">
             {/* Microphone status */}
             <div className="flex items-center">
-              <div className={`w-3 h-3 rounded-full mr-2 ${recognitionActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <div className={`w-2.5 h-2.5 rounded-full mr-2 ${recognitionActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
               <span className="text-sm text-gray-700">{defaultMicrophone}</span>
             </div>
             
             {/* VRChat connection status */}
             <div className="flex items-center">
-              <div className={`w-3 h-3 rounded-full mr-2 ${vrcMuted ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+              <div className={`w-2.5 h-2.5 rounded-full mr-2 ${vrcMuted ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
               <span className="text-sm text-gray-700">VRChat {vrcMuted ? 'Muted' : 'Connected'}</span>
             </div>
           </div>
@@ -316,8 +317,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       </div>
 
       {/* Language Selection */}
-      <div className="card p-5 animate-slide-up animate-delay-100">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="card p-4 animate-slide-up animate-delay-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="sourceLanguage" className="label">Source Language</label>
             <div className="relative">
@@ -367,12 +368,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       </div>
 
       {/* Speech Recognition UI */}
-      <div className="card p-5 animate-slide-up animate-delay-200">
-        <div className="flex justify-between items-center mb-4">
+      <div className="card p-4 animate-slide-up animate-delay-200">
+        <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-semibold text-gray-800">Speech Recognition</h3>
           <button 
             onClick={toggleRecognition} 
-            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-300 ${
+            className={`flex items-center px-3 py-1.5 rounded-md font-medium transition-all duration-300 ${
               recognitionActive 
                 ? 'bg-red-500 hover:bg-red-600 text-white' 
                 : 'bg-green-500 hover:bg-green-600 text-white'
@@ -404,8 +405,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
         </div>
 
         {/* Source Text Display */}
-        <div className="mb-4">
-          <div className="flex items-center mb-2">
+        <div className="mb-3">
+          <div className="flex items-center mb-1">
             <h4 className="text-sm font-medium text-gray-700">Detected Speech</h4>
             {detecting && (
               <div className="ml-2 status-processing">
@@ -428,7 +429,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
 
         {/* Translated Text Display */}
         <div>
-          <div className="flex items-center mb-2">
+          <div className="flex items-center mb-1">
             <h4 className="text-sm font-medium text-gray-700">Translated Text</h4>
             {translating && (
               <div className="ml-2 status-processing">

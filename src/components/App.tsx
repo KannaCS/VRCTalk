@@ -25,7 +25,7 @@ const App: React.FC = () => {
 
   if (loading || !config) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-blue-900 to-purple-900 text-white">
+      <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-blue-900 to-purple-900 text-white">
         <div className="text-center p-8 rounded-lg backdrop-blur-sm bg-black/20 border border-white/10 shadow-xl">
           <div className="flex justify-center mb-6">
             <div className="relative">
@@ -49,9 +49,9 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-indigo-900 via-blue-900 to-purple-900">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-900 via-blue-900 to-purple-900 overflow-hidden">
       {/* Header */}
-      <header className="py-3 bg-navy-900 bg-opacity-90 shadow-lg border-b border-white/10">
+      <header className="py-2 bg-navy-900 bg-opacity-90 shadow-lg border-b border-white/10 flex-shrink-0">
         <div className="flex justify-center items-center">
           <div className="flex flex-row items-center justify-center gap-2">
             <h1 className="text-xl font-bold text-white flex items-center">
@@ -85,7 +85,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 flex justify-center items-start py-6">
+      <main className="flex-1 flex justify-center overflow-y-auto py-4">
         <div className="w-full max-w-2xl px-4 animate-fade-in">
           <div className="transition-all duration-300 transform">
             {activeTab === 'main' ? (

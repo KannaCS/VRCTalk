@@ -161,7 +161,7 @@ body {
 
 /* Text display boxes */
 .text-display {
-  @apply p-4 rounded-lg border border-gray-300 min-h-[120px] bg-white;
+  @apply p-3 rounded-lg border border-gray-300 min-h-[90px] bg-white;
 }
 
 .text-display-active {

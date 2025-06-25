@@ -10,6 +10,7 @@ export type Config = {
     source_language: string;
     target_language: string;
     mode: number;    // 0 = translation, 1 = transcription only
+    selected_microphone: string | null; // Device ID for selected microphone
     language_settings: {
         omit_questionmark: boolean;
         gender_change: boolean;
@@ -30,6 +31,7 @@ export const DEFAULT_CONFIG: Config = {
     source_language: "en-US",
     target_language: "ja",
     mode: 0,
+    selected_microphone: null, // Default to system default microphone
     language_settings: {
         omit_questionmark: true,
         gender_change: false,
@@ -75,6 +77,7 @@ export function validateConfig(config: Config): Config {
     if (config.source_language) validated.source_language = config.source_language;
     if (config.target_language) validated.target_language = config.target_language;
     if (typeof config.mode === 'number') validated.mode = config.mode;
+    if (config.selected_microphone !== undefined) validated.selected_microphone = config.selected_microphone;
     
     // Language settings
     if (config.language_settings) {

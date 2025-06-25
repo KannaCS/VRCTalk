@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Config, DEFAULT_CONFIG, saveConfig, speed_presets } from '../utils/config';
 
 interface SettingsProps {
@@ -7,7 +7,9 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ config, setConfig }) => {
-  const [activeTab, setActiveTab] = useState<'translation'|'vrchat'>('translation');
+  const [activeTab, setActiveTab] = useState<'translation'|'vrchat'|'audio'>('translation');
+  const [availableMicrophones, setAvailableMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [loadingMics, setLoadingMics] = useState(true);
   
   // Update config and save changes
   const updateConfig = (newConfig: Config) => {
@@ -21,7 +23,34 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig }) => {
       updateConfig(DEFAULT_CONFIG);
     }
   };
+
+  // Load available microphones
+  useEffect(() => {
+    const loadMicrophones = async () => {
+      try {
+        setLoadingMics(true);
+        const devices = await navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(() => navigator.mediaDevices.enumerateDevices());
+        
+        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+        setAvailableMicrophones(audioInputs);
+      } catch (error) {
+        console.error('Error loading microphones:', error);
+      } finally {
+        setLoadingMics(false);
+      }
+    };
+    
+    loadMicrophones();
+  }, []);
   
+  // Get friendly name for the microphone
+  const getMicrophoneName = (deviceInfo: MediaDeviceInfo) => {
+    // Extract mic name from format "Device name (identifier)"
+    const match = deviceInfo.label.match(/^(.*?)(\s+\([^)]+\))?$/);
+    return match ? match[1] : deviceInfo.label || `Microphone (${deviceInfo.deviceId.slice(0, 8)}...)`;
+  };
+
   return (
     <div className="flex flex-col space-y-5">
       {/* Header */}
@@ -39,6 +68,16 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig }) => {
             onClick={() => setActiveTab('translation')}
           >
             Translation
+          </button>
+          <button 
+            className={`px-4 py-2 rounded-t-md font-medium transition-all duration-300 ${
+              activeTab === 'audio' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            onClick={() => setActiveTab('audio')}
+          >
+            Audio
           </button>
           <button 
             className={`px-4 py-2 rounded-t-md font-medium transition-all duration-300 ${
@@ -194,6 +233,103 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig }) => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Audio Settings */}
+      {activeTab === 'audio' && (
+        <div className="card p-5 animate-fade-in">
+          <div className="space-y-6">
+            {/* Microphone Selection */}
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <h3 className="font-semibold text-lg text-gray-800 mb-3">Microphone Selection</h3>
+              
+              {loadingMics ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="w-5 h-5 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mr-2"></div>
+                  <span className="text-gray-600">Loading microphones...</span>
+                </div>
+              ) : availableMicrophones.length === 0 ? (
+                <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-md text-yellow-700">
+                  No microphones found or microphone access denied. Please check your browser permissions.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Use system default option */}
+                  <label className="flex items-center px-3 py-2 bg-white rounded-md border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
+                    <input
+                      type="radio"
+                      name="selected-mic"
+                      checked={config.selected_microphone === null}
+                      onChange={() => updateConfig({
+                        ...config,
+                        selected_microphone: null
+                      })}
+                      className="form-radio h-5 w-5 text-blue-600"
+                    />
+                    <div className="ml-3">
+                      <span className="text-gray-800 font-medium">Use System Default</span>
+                      <p className="text-gray-500 text-sm mt-1">Use the default microphone selected by your system</p>
+                    </div>
+                  </label>
+                  
+                  {/* Available microphones */}
+                  {availableMicrophones.map((mic) => (
+                    <label 
+                      key={mic.deviceId} 
+                      className="flex items-center px-3 py-2 bg-white rounded-md border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="selected-mic"
+                        checked={config.selected_microphone === mic.deviceId}
+                        onChange={() => updateConfig({
+                          ...config,
+                          selected_microphone: mic.deviceId
+                        })}
+                        className="form-radio h-5 w-5 text-blue-600"
+                      />
+                      <div className="ml-3">
+                        <span className="text-gray-800 font-medium">{getMicrophoneName(mic)}</span>
+                        {mic.label && (
+                          <p className="text-gray-500 text-xs mt-0.5 truncate max-w-md">{mic.label}</p>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              
+              <div className="mt-4">
+                <button
+                  onClick={() => {
+                    setLoadingMics(true);
+                    navigator.mediaDevices.getUserMedia({ audio: true })
+                      .then(() => navigator.mediaDevices.enumerateDevices())
+                      .then((devices) => {
+                        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                        setAvailableMicrophones(audioInputs);
+                        setLoadingMics(false);
+                      })
+                      .catch((error) => {
+                        console.error('Error refreshing microphones:', error);
+                        setLoadingMics(false);
+                      });
+                  }}
+                  className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md text-sm font-medium flex items-center"
+                >
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh Microphones
+                </button>
+              </div>
+              
+              <p className="text-xs text-gray-500 mt-3">
+                Note: Changing microphones will restart the speech recognition service.
+              </p>
             </div>
           </div>
         </div>

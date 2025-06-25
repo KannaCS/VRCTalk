@@ -188,7 +188,16 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
         .then((devices) => {
           const audioInputs = devices.filter(device => device.kind === "audioinput");
           if (audioInputs.length > 0) {
-            const defaultInput = audioInputs[0].label;
+            // If we have a selected microphone ID in config, use that one
+            let selectedMic;
+            if (config.selected_microphone) {
+              selectedMic = audioInputs.find(device => device.deviceId === config.selected_microphone);
+            }
+            
+            // If no specific mic is selected or it's not found, use the default
+            const micToUse = selectedMic || audioInputs[0];
+            const defaultInput = micToUse.label;
+            
             // Extract mic name from format "Device name (identifier)"
             const match = defaultInput.match(/^(.*?)(\s+\([^)]+\))?$/);
             const micName = match ? match[1] : defaultInput;
@@ -203,7 +212,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     // Initialize speech recognition
     if (!sr) {
       info(`[SR] Initializing speech recognition with language ${config.source_language}`);
-      sr = new WebSpeech(config.source_language);
+      sr = new WebSpeech(config.source_language, config.selected_microphone);
       
       // Set up the result handler
       sr.onResult((result: string, isFinal: boolean) => {
@@ -273,6 +282,14 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       }
     }
   }, [detecting, sourceText]);
+  
+  // Effect for handling changes to selected microphone in config
+  useEffect(() => {
+    if (sr && config.selected_microphone !== undefined) {
+      info(`[SR] Selected microphone changed to: ${config.selected_microphone || 'default'}`);
+      sr.set_microphone(config.selected_microphone);
+    }
+  }, [config.selected_microphone]);
   
   // Handle source language change
   const handleSourceLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

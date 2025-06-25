@@ -4,25 +4,49 @@ import { info, error, debug } from '@tauri-apps/plugin-log';
 declare global {
     interface Window {
         webkitSpeechRecognition: any;
+        SpeechRecognition: any;
     }
 }
 
 export class WebSpeech extends Recognizer {
     recognition: any;
+    audioContext: AudioContext | null = null;
+    audioStream: MediaStream | null = null;
+    selectedMicrophoneId: string | null = null;
 
-    constructor(lang: string) {
+    constructor(lang: string, microphoneId: string | null = null) {
         super(lang);
-
-        this.recognition = new window.webkitSpeechRecognition();
+        this.selectedMicrophoneId = microphoneId;
+        
+        // Use the standard SpeechRecognition object if available
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this.recognition = new SpeechRecognition();
         this.recognition.interimResults = true;
         this.recognition.maxAlternatives = 1;
         this.recognition.continuous = true;
         this.recognition.lang = lang;
     }
 
-    start(): void {
+    async start(): Promise<void> {
         this.running = true;
         try {
+            // If a specific microphone is selected, set it as the audio source
+            if (this.selectedMicrophoneId) {
+                try {
+                    // First, we need to get access to the microphone to ensure permissions
+                    const constraints: MediaStreamConstraints = {
+                        audio: { deviceId: this.selectedMicrophoneId ? { exact: this.selectedMicrophoneId } : undefined }
+                    };
+                    
+                    this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    info(`[WEBSPEECH] Using specific microphone: ${this.selectedMicrophoneId}`);
+                } catch (e) {
+                    error(`[WEBSPEECH] Error accessing specific microphone: ${e}. Falling back to default.`);
+                    this.selectedMicrophoneId = null;
+                }
+            }
+            
+            // Start recognition
             this.recognition.start();
             info("[WEBSPEECH] Recognition started!");
         } catch (e: unknown) {
@@ -73,6 +97,19 @@ export class WebSpeech extends Recognizer {
     stop(): void {
         this.running = false;
         this.recognition.stop();
+        
+        // Clean up audio resources
+        if (this.audioStream) {
+            const tracks = this.audioStream.getTracks();
+            tracks.forEach(track => track.stop());
+            this.audioStream = null;
+        }
+        
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+        
         info("[WEBSPEECH] Recognition stopped!");
     }
 
@@ -85,6 +122,25 @@ export class WebSpeech extends Recognizer {
         setTimeout(() => {
             this.recognition.start();
         }, 500);
+    }
+    
+    set_microphone(deviceId: string | null): void {
+        if (deviceId === this.selectedMicrophoneId) return;
+        
+        debug(`[WEBSPEECH] Changing microphone to ${deviceId || 'default'}`);
+        this.selectedMicrophoneId = deviceId;
+        
+        // Restart recognition with the new microphone
+        const wasRunning = this.running;
+        if (wasRunning) {
+            this.stop();
+        }
+        
+        if (wasRunning) {
+            setTimeout(() => {
+                this.start();
+            }, 500);
+        }
     }
 
     status(): boolean {

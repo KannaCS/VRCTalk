@@ -7,7 +7,6 @@ VRCTalk is a desktop application that provides real-time speech recognition and 
 - Real-time speech recognition using Web Speech API
 - Translation between multiple languages via Google Translate
 - Direct integration with VRChat's OSC system for chatbox messages
-- Gender-specific translation options
 - Configurable typing indicators
 - Automatic pause when VRChat is muted
 - Customizable message formatting
@@ -46,7 +45,6 @@ VRCTalk is a desktop application that provides real-time speech recognition and 
 
 ### Language Settings
 
-- Gender-specific pronouns adjustments
 - Question mark handling for Japanese
 
 ## Development

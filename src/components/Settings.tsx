@@ -54,7 +54,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig }) => {
           <div className="ml-auto">
             <button 
               onClick={handleReset} 
-              className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors duration-300"
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md transition-colors duration-300 shadow-sm"
             >
               Reset to Default
             </button>

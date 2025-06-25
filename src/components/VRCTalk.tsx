@@ -289,6 +289,52 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     setRecognitionActive(!recognitionActive);
   };
 
+  // Swap languages
+  const swapLanguages = () => {
+    const tempLang = sourceLanguage;
+    
+    // 1. Handle source to target (e.g. "en-US" to "en")
+    let newTargetLang = tempLang;
+    
+    // If source has a region specifier (e.g., "en-US"), look for generic version in target
+    if (tempLang.includes('-')) {
+      const baseLang = tempLang.split('-')[0];
+      const genericTarget = langTo.find(l => l.code === baseLang);
+      if (genericTarget) {
+        newTargetLang = genericTarget.code;
+      }
+    }
+    
+    // 2. Handle target to source (e.g. "en" to "en-US")
+    let newSourceLang = targetLanguage;
+    
+    // If target is a generic language without region (e.g., "en")
+    // Look for a region-specific version in source languages (prefer US variants)
+    if (!targetLanguage.includes('-')) {
+      // First try to find the US variant (e.g., "en-US" for "en")
+      const usVariant = langSource.find(l => l.code === `${targetLanguage}-US`);
+      if (usVariant) {
+        newSourceLang = usVariant.code;
+      } else {
+        // Then try any variant that starts with the target language code
+        const anyVariant = langSource.find(l => l.code.startsWith(`${targetLanguage}-`));
+        if (anyVariant) {
+          newSourceLang = anyVariant.code;
+        } else {
+          // If no variants found, look for exact match
+          const exactMatch = langSource.find(l => l.code === targetLanguage);
+          if (exactMatch) {
+            newSourceLang = exactMatch.code;
+          }
+        }
+      }
+    }
+    
+    // Apply the changes
+    setSourceLanguage(newSourceLang);
+    setTargetLanguage(newTargetLang);
+  };
+
   // UI component return
   return (
     <div className="flex flex-col space-y-4">
@@ -318,7 +364,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
 
       {/* Language Selection */}
       <div className="card p-4 animate-slide-up animate-delay-100">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
           <div>
             <label htmlFor="sourceLanguage" className="label">Source Language</label>
             <div className="relative">
@@ -342,6 +388,19 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             </div>
           </div>
           
+          {/* Swap languages button */}
+          <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 hidden md:block">
+            <button 
+              onClick={swapLanguages}
+              className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 shadow-lg transition-all duration-200 hover:scale-110"
+              title="Swap Languages"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+            </button>
+          </div>
+          
           <div>
             <label htmlFor="targetLanguage" className="label">Target Language</label>
             <div className="relative">
@@ -363,6 +422,20 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
                 </svg>
               </div>
             </div>
+          </div>
+          
+          {/* Mobile swap button */}
+          <div className="flex justify-center mt-2 md:hidden">
+            <button 
+              onClick={swapLanguages}
+              className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 shadow-lg transition-all duration-200 hover:scale-110 flex items-center"
+              title="Swap Languages"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+              Swap Languages
+            </button>
           </div>
         </div>
       </div>

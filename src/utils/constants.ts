@@ -11,6 +11,9 @@ export const langSource = [
     { code: "it", name: "Italian" },
     { code: "es", name: "Spanish" },
     { code: "ru", name: "Russian" },
+    { code: "id", name: "Indonesian" },
+    { code: "ms", name: "Malaysian" },
+    { code: "ar", name: "Arabic" },
 ];
 
 // Language options for target language
@@ -25,6 +28,9 @@ export const langTo = [
     { code: "it", name: "Italian" },
     { code: "es", name: "Spanish" },
     { code: "ru", name: "Russian" },
+    { code: "id", name: "Indonesian" },
+    { code: "ms", name: "Malaysian" },
+    { code: "ar", name: "Arabic" },
 ];
 
 /**

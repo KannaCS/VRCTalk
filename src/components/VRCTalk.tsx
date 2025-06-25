@@ -34,6 +34,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   const [sourceLanguage, setSourceLanguage] = useState(config.source_language);
   const [targetLanguage, setTargetLanguage] = useState(config.target_language);
+  const [isChangingLanguage, setIsChangingLanguage] = useState(false);
 
   // Store SR in a React ref so it persists between renders but doesn't cause re-renders
   const [sr, setSr] = useState<Recognizer | null>(null);
@@ -41,6 +42,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   // Update config when language selections change
   useEffect(() => {
+    // Keep track of the previous values for debugging
+    const prevSourceLang = config.source_language;
+    const prevTargetLang = config.target_language;
+    
     const newConfig = {
       ...config,
       source_language: sourceLanguage,
@@ -49,9 +54,42 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     setConfig(newConfig);
     saveConfig(newConfig);
     
+    // Log language change details
+    info(`[LANGUAGE] Language change detected: source=${prevSourceLang}->${sourceLanguage}, target=${prevTargetLang}->${targetLanguage}`);
+    
     if (sr) {
-      info(`[LANGUAGE] Changing source language to ${sourceLanguage}`);
-      sr.set_lang(sourceLanguage);
+      // Only handle source language changes here, as that affects speech recognition
+      if (prevSourceLang !== sourceLanguage) {
+        info(`[LANGUAGE] Changing source language to ${sourceLanguage}`);
+        
+        // Provide visual feedback that language change is in progress
+        setSourceText("");
+        setTranslatedText("");
+        setDetecting(false);
+        setIsChangingLanguage(true);
+        
+        // Reset the detection queue
+        detectionQueue = [];
+        
+        // Apply the language change to the recognizer with a slight delay to let UI update
+        setTimeout(() => {
+          if (sr) {
+            sr.set_lang(sourceLanguage);
+            
+            // Add small delay before allowing new detections to ensure complete transition
+            setTimeout(() => {
+              // Force trigger a state update to refresh detection state
+              setTriggerUpdate(!triggerUpdate);
+              setIsChangingLanguage(false);
+            }, 1000);
+          }
+        }, 200);
+      }
+      // If only target language changed (not source), we don't need to restart recognition
+      else if (prevTargetLang !== targetLanguage) {
+        info(`[LANGUAGE] Only target language changed to ${targetLanguage}, no need to restart recognition`);
+        setIsChangingLanguage(false);
+      }
     }
   }, [sourceLanguage, targetLanguage]);
   
@@ -210,7 +248,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     // Start VRChat listener in Rust backend
     invoke("start_vrc_listener");
     
-    // Check available microphones
+    // Microphone detection with a fallback for when labels aren't immediately available
+    let micDetectionAttempts = 0;
+    const maxAttempts = 5;
+    
     const microphoneCheckInterval = setInterval(() => {
       navigator.mediaDevices.enumerateDevices()
         .then((devices) => {
@@ -226,14 +267,29 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             const micToUse = selectedMic || audioInputs[0];
             const defaultInput = micToUse.label;
             
-            // Extract mic name from format "Device name (identifier)"
-            const match = defaultInput.match(/^(.*?)(\s+\([^)]+\))?$/);
-            const micName = match ? match[1] : defaultInput;
-            setDefaultMicrophone(micName);
+            if (defaultInput) {
+              // Extract mic name from format "Device name (identifier)"
+              const match = defaultInput.match(/^(.*?)(\s+\([^)]+\))?$/);
+              const micName = match ? match[1] : defaultInput;
+              setDefaultMicrophone(micName);
+            } else {
+              // Increment attempt counter - if microphone is working but we can't get the label
+              micDetectionAttempts++;
+              if (micDetectionAttempts >= maxAttempts && defaultMicrophone === "Initializing...") {
+                // After several attempts, just display "Microphone Active" if speech recognition is working
+                info("[MEDIA] Could not get microphone label after multiple attempts. Setting generic label.");
+                setDefaultMicrophone("Microphone Active");
+              }
+            }
           }
         })
         .catch((err) => {
           error(`[MEDIA] Error accessing media devices: ${err}`);
+          micDetectionAttempts++;
+          if (micDetectionAttempts >= maxAttempts && defaultMicrophone === "Initializing...") {
+            // After several attempts, just display "Microphone Active" if speech recognition is working
+            setDefaultMicrophone("Microphone Active");
+          }
         });
     }, 1000);
     
@@ -244,6 +300,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     // Set up the result handler
     recognizer.onResult((result: string, isFinal: boolean) => {
       info(`[SR] Received speech: Final=${isFinal}, Text=${result.substring(0, 30)}${result.length > 30 ? '...' : ''}`);
+      
+      // If we receive speech but microphone still shows initializing, assume it's working
+      if (defaultMicrophone === "Initializing...") {
+        info("[MEDIA] Received speech while microphone showed initializing. Setting status to Microphone Active.");
+        setDefaultMicrophone("Microphone Active");
+      }
       
       // Send typing status if configured
       if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
@@ -286,6 +348,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   // Process detected speech
   useEffect(() => {
+    if (!sr || isChangingLanguage) return; // Skip processing while language is changing
+    
     info(`[DETECTION] Status: Detecting=${detecting}, Text length=${sourceText.length}`);
     
     if (!detecting && sourceText.length > 0) {
@@ -319,12 +383,40 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   // Handle source language change
   const handleSourceLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSourceLanguage(e.target.value);
+    const newLang = e.target.value;
+    info(`[LANGUAGE] User changing source language to: ${newLang}`);
+    
+    // Show change is in progress
+    setIsChangingLanguage(true);
+    setSourceText("");
+    setTranslatedText("");
+    
+    // Force reset recognition
+    if (sr) {
+      try {
+        sr.stop();
+      } catch (e) {
+        error(`[LANGUAGE] Error stopping recognition during language change: ${e}`);
+      }
+    }
+    
+    // Apply the language change with a slight delay
+    setTimeout(() => {
+      setSourceLanguage(newLang);
+    }, 200);
   };
   
   // Handle target language change
   const handleTargetLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setTargetLanguage(e.target.value);
+    const newLang = e.target.value;
+    info(`[LANGUAGE] User changing target language to: ${newLang}`);
+    
+    // Only show loading indicator if we're in translation mode
+    if (config.mode === 0) {
+      setIsChangingLanguage(true);
+    }
+    
+    setTargetLanguage(newLang);
   };
   
   // Toggle recognition
@@ -334,14 +426,27 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
 
   // Swap languages
   const swapLanguages = () => {
-    const tempLang = sourceLanguage;
+    info("[LANGUAGE] User swapping languages");
+    // Show language change in progress
+    setIsChangingLanguage(true);
+    
+    // Clear any existing text
+    setSourceText("");
+    setTranslatedText("");
+    setDetecting(false);
+    
+    // Reset the detection queue
+    detectionQueue = [];
+    
+    const tempSourceLang = sourceLanguage;
+    const tempTargetLang = targetLanguage;
     
     // 1. Handle source to target (e.g. "en-US" to "en")
-    let newTargetLang = tempLang;
+    let newTargetLang = tempSourceLang;
     
     // If source has a region specifier (e.g., "en-US"), look for generic version in target
-    if (tempLang.includes('-')) {
-      const baseLang = tempLang.split('-')[0];
+    if (tempSourceLang.includes('-')) {
+      const baseLang = tempSourceLang.split('-')[0];
       const genericTarget = langTo.find(l => l.code === baseLang);
       if (genericTarget) {
         newTargetLang = genericTarget.code;
@@ -349,23 +454,23 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     }
     
     // 2. Handle target to source (e.g. "en" to "en-US")
-    let newSourceLang = targetLanguage;
+    let newSourceLang = tempTargetLang;
     
     // If target is a generic language without region (e.g., "en")
     // Look for a region-specific version in source languages (prefer US variants)
-    if (!targetLanguage.includes('-')) {
+    if (!tempTargetLang.includes('-')) {
       // First try to find the US variant (e.g., "en-US" for "en")
-      const usVariant = langSource.find(l => l.code === `${targetLanguage}-US`);
+      const usVariant = langSource.find(l => l.code === `${tempTargetLang}-US`);
       if (usVariant) {
         newSourceLang = usVariant.code;
       } else {
         // Then try any variant that starts with the target language code
-        const anyVariant = langSource.find(l => l.code.startsWith(`${targetLanguage}-`));
+        const anyVariant = langSource.find(l => l.code.startsWith(`${tempTargetLang}-`));
         if (anyVariant) {
           newSourceLang = anyVariant.code;
         } else {
           // If no variants found, look for exact match
-          const exactMatch = langSource.find(l => l.code === targetLanguage);
+          const exactMatch = langSource.find(l => l.code === tempTargetLang);
           if (exactMatch) {
             newSourceLang = exactMatch.code;
           }
@@ -373,9 +478,31 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       }
     }
     
-    // Apply the changes
-    setSourceLanguage(newSourceLang);
+    info(`[LANGUAGE] Swapping languages from ${tempSourceLang} -> ${tempTargetLang} to ${newSourceLang} -> ${newTargetLang}`);
+    
+    // Apply the changes in sequence with a slight delay between them
+    // First set the target language
     setTargetLanguage(newTargetLang);
+    
+    // Then set the source language after a small delay
+    setTimeout(() => {
+      setSourceLanguage(newSourceLang);
+      
+      // Force a complete reset of the speech recognition after swap is complete
+      if (sr) {
+        setTimeout(() => {
+          if (sr) {
+            info("[LANGUAGE] Forcing speech recognizer restart after language swap");
+            sr.stop();
+            setTimeout(() => {
+              if (sr && recognitionActive) {
+                sr.start();
+              }
+            }, 500);
+          }
+        }, 500);
+      }
+    }, 300);
   };
 
   // Effect for handling changes to the disable_when_muted setting
@@ -393,6 +520,58 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       }, 300); // Short delay to ensure state updates properly
     }
   }, [config.vrchat_settings.disable_when_muted, vrcMuted, recognitionActive, sr]);
+
+  // Force restart recognition after language changes
+  useEffect(() => {
+    // Skip initial render
+    if (!sr) return;
+    
+    // Reset recognition when the component language state changes
+    // This effect runs after the language props are updated
+    info(`[LANGUAGE_RESET] Ensuring proper recognition state after language update: ${sourceLanguage}`);
+    
+    // Brief pause to let the system stabilize
+    const timer = setTimeout(() => {
+      if (sr) {
+        // First ensure recognition is stopped
+        try {
+          sr.stop();
+        } catch (e) {
+          error(`[LANGUAGE_RESET] Error stopping recognition: ${e}`);
+        }
+        
+        // Then restart if it should be active
+        setTimeout(() => {
+          if (sr && recognitionActive) {
+            info("[LANGUAGE_RESET] Restarting recognition after language change");
+            try {
+              sr.start();
+            } catch (e) {
+              error(`[LANGUAGE_RESET] Error restarting recognition: ${e}`);
+              
+              // As a last resort, try one more restart
+              setTimeout(() => {
+                if (sr && recognitionActive) {
+                  try {
+                    sr.restart();
+                  } catch (finalError) {
+                    error(`[LANGUAGE_RESET] Final error restarting recognition: ${finalError}`);
+                  }
+                }
+              }, 500);
+            }
+          }
+          
+          // Clear language change status after a delay
+          setTimeout(() => {
+            setIsChangingLanguage(false);
+          }, 500);
+        }, 500);
+      }
+    }, 1000);
+    
+    return () => clearTimeout(timer);
+  }, [sourceLanguage]);
 
   // UI component return
   return (
@@ -546,15 +725,26 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
                 Listening
               </div>
             )}
+            {isChangingLanguage && (
+              <div className="ml-2 status-processing">
+                <div className="mr-1 h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></div>
+                Changing Language
+              </div>
+            )}
           </div>
-          <div className={`text-display relative overflow-hidden ${detecting ? 'text-display-active' : ''}`}>
+          <div className={`text-display relative overflow-hidden ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
             <div key={sourceText} className={`transition-all duration-300 ${sourceText ? 'animate-slide-up' : ''}`}>
               {sourceText || (
-                <span className="text-gray-400 italic">Waiting for speech...</span>
+                <span className="text-gray-400 italic">
+                  {isChangingLanguage ? 'Changing language...' : 'Waiting for speech...'}
+                </span>
               )}
             </div>
             {detecting && (
               <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-blue-500 to-green-400 shimmer"></div>
+            )}
+            {isChangingLanguage && (
+              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-purple-500 to-blue-400 shimmer"></div>
             )}
           </div>
         </div>
@@ -573,7 +763,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
           <div className={`text-display relative overflow-hidden ${translating ? 'text-display-active' : ''}`}>
             <div key={translatedText} className={`transition-all duration-500 ${translatedText ? 'animate-slide-up' : ''}`}>
               {translatedText || (
-                <span className="text-gray-400 italic">Translation will appear here...</span>
+                <span className="text-gray-400 italic">
+                  {isChangingLanguage ? 'Changing language...' : 'Translation will appear here...'}
+                </span>
               )}
             </div>
             {translating && (

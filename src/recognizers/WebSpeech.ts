@@ -92,7 +92,7 @@ export class WebSpeech extends Recognizer {
     }
 
     onResult(callback: (result: string, final: boolean) => void): void {
-        this.recognition.onresult = (event: { results: { [x: number]: { [x: number]: { transcript: string }; isFinal: boolean } } }) => {
+        this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
             if (event.results.length > 0) {
                 callback(
                     event.results[event.results.length - 1][0].transcript.trim(),

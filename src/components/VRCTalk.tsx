@@ -14,7 +14,8 @@ interface VRCTalkProps {
   setConfig: React.Dispatch<React.SetStateAction<Config | null>>;
 }
 
-let sr: Recognizer | null = null;
+// Move global speech recognizer to React component state
+// This will persist when component unmounts/remounts during tab switching
 let detectionQueue: string[] = [];
 let lock = false;
 
@@ -33,6 +34,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   const [sourceLanguage, setSourceLanguage] = useState(config.source_language);
   const [targetLanguage, setTargetLanguage] = useState(config.target_language);
+
+  // Store SR in a React ref so it persists between renders but doesn't cause re-renders
+  const [sr, setSr] = useState<Recognizer | null>(null);
+  const [initialized, setInitialized] = useState(false);
   
   // Update config when language selections change
   useEffect(() => {
@@ -60,18 +65,24 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     }
     
     if (recognitionActive) {
-      if (vrcMuted && config.vrchat_settings.disable_when_muted) {
+      // Check if we should stop recognition due to mute
+      const shouldBeMuted = vrcMuted && config.vrchat_settings.disable_when_muted;
+      
+      // If the app should be muted, stop recognition
+      if (shouldBeMuted) {
         info("[SR] Pausing recognition because VRChat is muted");
         sr.stop();
-      } else if (!sr.status()) {
-        info("[SR] Starting recognition");
+      } 
+      // Otherwise, ensure recognition is running if it's not already
+      else if (!sr.status()) {
+        info("[SR] Starting/resuming recognition");
         sr.start();
       }
     } else {
       info("[SR] Stopping recognition by user request");
       sr.stop();
     }
-  }, [recognitionActive, vrcMuted, config.vrchat_settings.disable_when_muted]);
+  }, [recognitionActive, vrcMuted, config.vrchat_settings.disable_when_muted, sr]);
   
   // Translation processing loop
   useEffect(() => {
@@ -173,10 +184,27 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   // Initialize speech recognition and VRC mute listener
   useEffect(() => {
+    if (initialized) return; // Only initialize once
+    
+    info("[SR] Initializing speech recognition");
+    setInitialized(true);
+    
     // Listen for VRChat mute status
     const unlistenVrcMute = listen<boolean>("vrchat-mute", (event) => {
       info(`[OSC] Received VRChat mute status: ${event.payload}`);
       setVRCMuted(event.payload);
+
+      // Explicitly handle unmute events when disable_when_muted is active
+      if (sr && !event.payload && config.vrchat_settings.disable_when_muted && recognitionActive) {
+        info("[OSC] VRChat unmuted while disable_when_muted is active. Resuming recognition...");
+        // Use a short delay to ensure state updates properly
+        setTimeout(() => {
+          if (sr) {
+            info("[OSC] Restarting recognition after unmute");
+            sr.restart();
+          }
+        }, 300);
+      }
     });
     
     // Start VRChat listener in Rust backend
@@ -210,36 +238,34 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     }, 1000);
     
     // Initialize speech recognition
-    if (!sr) {
-      info(`[SR] Initializing speech recognition with language ${config.source_language}`);
-      sr = new WebSpeech(config.source_language, config.selected_microphone);
+    const recognizer = new WebSpeech(config.source_language, config.selected_microphone);
+    setSr(recognizer);
       
-      // Set up the result handler
-      sr.onResult((result: string, isFinal: boolean) => {
-        info(`[SR] Received speech: Final=${isFinal}, Text=${result.substring(0, 30)}${result.length > 30 ? '...' : ''}`);
-        
-        // Send typing status if configured
-        if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
-          invoke("send_typing", { 
-            address: config.vrchat_settings.osc_address, 
-            port: `${config.vrchat_settings.osc_port}` 
-          });
-        }
-        
-        setSourceText(result);
-        setDetecting(!isFinal);
-      });
+    // Set up the result handler
+    recognizer.onResult((result: string, isFinal: boolean) => {
+      info(`[SR] Received speech: Final=${isFinal}, Text=${result.substring(0, 30)}${result.length > 30 ? '...' : ''}`);
       
-      // Start recognition
-      sr.start();
-      info("[SR] Speech recognition started");
-    }
+      // Send typing status if configured
+      if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
+        invoke("send_typing", { 
+          address: config.vrchat_settings.osc_address, 
+          port: `${config.vrchat_settings.osc_port}` 
+        });
+      }
+      
+      setSourceText(result);
+      setDetecting(!isFinal);
+    });
+    
+    // Start recognition
+    recognizer.start();
+    info("[SR] Speech recognition started");
     
     return () => {
       clearInterval(microphoneCheckInterval);
       unlistenVrcMute.then(unlisten => unlisten());
     };
-  }, []);
+  }, [initialized]); // Only run on initial component mount
   
   // Handle changes in microphone
   useEffect(() => {
@@ -289,7 +315,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       info(`[SR] Selected microphone changed to: ${config.selected_microphone || 'default'}`);
       sr.set_microphone(config.selected_microphone);
     }
-  }, [config.selected_microphone]);
+  }, [config.selected_microphone, sr]);
   
   // Handle source language change
   const handleSourceLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -351,6 +377,22 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     setSourceLanguage(newSourceLang);
     setTargetLanguage(newTargetLang);
   };
+
+  // Effect for handling changes to the disable_when_muted setting
+  useEffect(() => {
+    info(`[CONFIG] disable_when_muted changed to ${config.vrchat_settings.disable_when_muted}`);
+    
+    // If disable_when_muted was just turned off and we're currently muted in VRChat,
+    // we need to explicitly restart recognition
+    if (!config.vrchat_settings.disable_when_muted && vrcMuted && recognitionActive && sr) {
+      info("[CONFIG] disable_when_muted turned off while VRChat is muted. Resuming recognition...");
+      setTimeout(() => {
+        if (sr) {
+          sr.restart();
+        }
+      }, 300); // Short delay to ensure state updates properly
+    }
+  }, [config.vrchat_settings.disable_when_muted, vrcMuted, recognitionActive, sr]);
 
   // UI component return
   return (

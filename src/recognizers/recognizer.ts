@@ -8,6 +8,7 @@ export abstract class Recognizer {
 
     abstract start(): void;
     abstract stop(): void;
+    abstract restart(): void;
     abstract set_lang(lang: string): void;
     abstract set_microphone(deviceId: string | null): void;
     abstract status(): boolean;

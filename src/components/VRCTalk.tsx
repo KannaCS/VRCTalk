@@ -134,10 +134,15 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       info(`[TRANSLATION] Starting translation. Queue length: ${detectionQueue.length}`);
       
       // Send typing indicator to VRChat
-      await invoke("send_typing", { 
-        address: config.vrchat_settings.osc_address, 
-        port: `${config.vrchat_settings.osc_port}` 
-      });
+      try {
+        await invoke("send_typing", { 
+          address: config.vrchat_settings.osc_address, 
+          port: `${config.vrchat_settings.osc_port}` 
+        });
+      } catch (e) {
+        error(`[TRANSLATION] Error sending typing status: ${e}`);
+        // Continue anyway, as this is not critical
+      }
       
       let attempts = 3;
       while (attempts > 0) {
@@ -186,17 +191,22 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             ? `${finalTranslation}${config.vrchat_settings.only_translation ? '' : ` (${originalText})`}`
             : `${originalText}${config.vrchat_settings.only_translation ? '' : ` (${finalTranslation})`}`;
           
-          await invoke("send_message", {
-            address: config.vrchat_settings.osc_address,
-            port: `${config.vrchat_settings.osc_port}`,
-            msg: messageFormat
-          });
-          
-          // Wait for chatbox to process
-          await new Promise(r => setTimeout(r, calculateMinWaitTime(
-            finalTranslation, 
-            config.vrchat_settings.chatbox_update_speed
-          )));
+          try {
+            await invoke("send_message", {
+              address: config.vrchat_settings.osc_address,
+              port: `${config.vrchat_settings.osc_port}`,
+              msg: messageFormat
+            });
+            
+            // Wait for chatbox to process
+            await new Promise(r => setTimeout(r, calculateMinWaitTime(
+              finalTranslation, 
+              config.vrchat_settings.chatbox_update_speed
+            )));
+          } catch (sendError) {
+            error(`[TRANSLATION] Error sending message to VRChat: ${sendError}`);
+            // Continue anyway, we've already done the translation
+          }
           
           attempts = 0;
         } catch (e) {
@@ -245,8 +255,22 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       }
     });
     
+    // Listen for VRChat connection status
+    const unlistenVrcStatus = listen<string>("vrchat-status", (event) => {
+      info(`[OSC] VRChat connection status: ${event.payload}`);
+      // You could update UI based on this status if needed
+    });
+    
+    // Listen for VRChat errors
+    const unlistenVrcError = listen<string>("vrchat-error", (event) => {
+      error(`[OSC] VRChat error: ${event.payload}`);
+      // You could show an error message to the user if needed
+    });
+    
     // Start VRChat listener in Rust backend
-    invoke("start_vrc_listener");
+    invoke("start_vrc_listener").catch(e => {
+      error(`[OSC] Error starting VRChat listener: ${e}`);
+    });
     
     // Microphone detection with a fallback for when labels aren't immediately available
     let micDetectionAttempts = 0;
@@ -326,6 +350,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     return () => {
       clearInterval(microphoneCheckInterval);
       unlistenVrcMute.then(unlisten => unlisten());
+      unlistenVrcStatus.then(unlisten => unlisten());
+      unlistenVrcError.then(unlisten => unlisten());
     };
   }, [initialized]); // Only run on initial component mount
   
@@ -362,12 +388,16 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
         info(`[DETECTION] Added to translation queue. Queue length: ${detectionQueue.length}`);
       } else { // Transcription only mode
         info(`[DETECTION] Sending transcription directly to VRChat`);
+        const messageToSend = sourceLanguage === "ja" && config.language_settings.omit_questionmark
+          ? sourceText.replace(/？/g, "")
+          : sourceText;
+          
         invoke("send_message", { 
           address: config.vrchat_settings.osc_address, 
           port: `${config.vrchat_settings.osc_port}`, 
-          msg: sourceLanguage === "ja" && config.language_settings.omit_questionmark
-            ? sourceText.replace(/？/g, "")
-            : sourceText 
+          msg: messageToSend 
+        }).catch(e => {
+          error(`[DETECTION] Error sending message to VRChat: ${e}`);
         });
       }
     }

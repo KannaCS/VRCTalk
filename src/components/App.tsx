@@ -56,7 +56,7 @@ const App: React.FC = () => {
           <div className="flex flex-row items-center justify-center gap-2">
             <h1 className="text-xl font-bold text-white flex items-center">
               VRC<span className="text-blue-400">Talk</span>
-              <span className="ml-1.5 px-1.5 py-0.5 bg-blue-600 text-xs text-white font-medium rounded">v0.1.0</span>
+              <span className="ml-1.5 px-1.5 py-0.5 bg-blue-600 text-xs text-white font-medium rounded">v0.1.3</span>
             </h1>
             <nav className="flex space-x-1.5 ml-2">
               <button 

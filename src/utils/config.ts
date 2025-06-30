@@ -1,3 +1,7 @@
+import { readTextFile, writeTextFile, exists, create } from '@tauri-apps/plugin-fs';
+import { appConfigDir } from '@tauri-apps/api/path';
+import { info, error } from '@tauri-apps/plugin-log';
+
 // import { Store } from '@tauri-apps/plugin-fs';
 
 export const speed_presets = {
@@ -48,25 +52,65 @@ export const DEFAULT_CONFIG: Config = {
     }
 };
 
-// Temporary implementation that returns the default config
-// Later we can implement actual storage with Tauri's fs plugin
+// Get the config file path
+async function getConfigPath(): Promise<string> {
+    const configDir = await appConfigDir();
+    return `${configDir}/config.json`;
+}
+
+// Load configuration from file
 export async function loadConfig(): Promise<Config> {
     try {
-        // For now, just return the default config
-        // We'll implement proper storage later
-        return DEFAULT_CONFIG;
-    } catch (error) {
-        console.error('[CONFIG] Error loading config:', error);
+        const configPath = await getConfigPath();
+        const configDir = await appConfigDir();
+        
+        // Check if config directory exists, create if not
+        if (!(await exists(configDir))) {
+            // Create directory without options
+            await create(configDir);
+            info('[CONFIG] Created config directory');
+        }
+        
+        // Check if config file exists
+        if (await exists(configPath)) {
+            info('[CONFIG] Loading config from file');
+            const configJson = await readTextFile(configPath);
+            const loadedConfig = JSON.parse(configJson);
+            
+            // Validate and merge with defaults to ensure all fields exist
+            return validateConfig(loadedConfig);
+        } else {
+            info('[CONFIG] Config file not found, using defaults');
+            // Save default config for future use
+            await saveConfig(DEFAULT_CONFIG);
+            return DEFAULT_CONFIG;
+        }
+    } catch (e) {
+        error(`[CONFIG] Error loading config: ${e}`);
         return DEFAULT_CONFIG;
     }
 }
 
+// Save configuration to file
 export async function saveConfig(config: Config): Promise<void> {
     try {
-        console.log('[CONFIG] Saving config (placeholder):', config);
-        // Placeholder for actual storage implementation
-    } catch (error) {
-        console.error('[CONFIG] Error saving config:', error);
+        const configPath = await getConfigPath();
+        const configDir = await appConfigDir();
+        
+        // Ensure config directory exists
+        if (!(await exists(configDir))) {
+            // Create directory without options
+            await create(configDir);
+        }
+        
+        // Validate config before saving
+        const validatedConfig = validateConfig(config);
+        
+        // Save to file
+        await writeTextFile(configPath, JSON.stringify(validatedConfig, null, 2));
+        info('[CONFIG] Config saved successfully');
+    } catch (e) {
+        error(`[CONFIG] Error saving config: ${e}`);
     }
 }
 

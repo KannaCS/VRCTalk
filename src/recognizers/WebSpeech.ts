@@ -15,6 +15,8 @@ export class WebSpeech extends Recognizer {
     selectedMicrophoneId: string | null = null;
     lang: string;
     resultCallback: ((result: string, final: boolean) => void) | null = null;
+    private reconnectAttempts: number = 0;
+    private maxReconnectAttempts: number = 5;
 
     constructor(lang: string, microphoneId: string | null = null) {
         super(lang);
@@ -28,27 +30,41 @@ export class WebSpeech extends Recognizer {
     private initRecognition(): void {
         info(`[WEBSPEECH] Initializing recognition with language: ${this.lang}`);
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        this.recognition = new SpeechRecognition();
-        this.recognition.interimResults = true;
-        this.recognition.maxAlternatives = 1;
-        this.recognition.continuous = true;
-        this.recognition.lang = this.lang;
-
-        // Set up standard event handlers
-        this.recognition.onend = () => this.handleOnEnd();
-        this.recognition.onnomatch = () => this.handleOnNoMatch();
-        this.recognition.onerror = (e: { error?: string }) => this.handleOnError(e);
         
-        // Re-attach the result callback if one was previously set
-        if (this.resultCallback) {
-            this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
-                if (event.results.length > 0) {
-                    this.resultCallback!(
-                        event.results[event.results.length - 1][0].transcript.trim(),
-                        event.results[event.results.length - 1].isFinal
-                    );
-                }
-            };
+        if (!SpeechRecognition) {
+            error("[WEBSPEECH] SpeechRecognition API not available in this browser");
+            return;
+        }
+        
+        try {
+            this.recognition = new SpeechRecognition();
+            this.recognition.interimResults = true;
+            this.recognition.maxAlternatives = 1;
+            this.recognition.continuous = true;
+            this.recognition.lang = this.lang;
+
+            // Set up standard event handlers
+            this.recognition.onend = () => this.handleOnEnd();
+            this.recognition.onnomatch = () => this.handleOnNoMatch();
+            this.recognition.onerror = (e: { error?: string }) => this.handleOnError(e);
+            
+            // Re-attach the result callback if one was previously set
+            if (this.resultCallback) {
+                this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
+                    if (event.results.length > 0) {
+                        this.resultCallback!(
+                            event.results[event.results.length - 1][0].transcript.trim(),
+                            event.results[event.results.length - 1].isFinal
+                        );
+                    }
+                };
+            }
+            
+            // Reset reconnect attempts when successfully initialized
+            this.reconnectAttempts = 0;
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            error(`[WEBSPEECH] Error initializing speech recognition: ${errorMessage}`);
         }
     }
 
@@ -56,15 +72,46 @@ export class WebSpeech extends Recognizer {
         // Only try to restart if we're supposed to be running
         if (this.running) {
             info("[WEBSPEECH] Recognition ended unexpectedly. Restarting...");
-            setTimeout(() => {
-                try {
-                    this.recognition.start();
-                } catch (e) {
-                    error(`[WEBSPEECH] Failed to restart recognition: ${e}`);
-                    // Reset running state if restart failed
-                    this.running = false;
-                }
-            }, 500);
+            
+            // Use exponential backoff for reconnection attempts
+            const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
+            this.reconnectAttempts++;
+            
+            if (this.reconnectAttempts <= this.maxReconnectAttempts) {
+                info(`[WEBSPEECH] Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+                
+                setTimeout(() => {
+                    try {
+                        this.recognition.start();
+                        info("[WEBSPEECH] Recognition restarted successfully");
+                    } catch (err: unknown) {
+                        const errorMessage = err instanceof Error ? err.message : String(err);
+                        error(`[WEBSPEECH] Failed to restart recognition: ${errorMessage}`);
+                        
+                        // If we've failed too many times, reinitialize the recognition object
+                        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                            info("[WEBSPEECH] Max reconnect attempts reached, reinitializing recognition");
+                            this.initRecognition();
+                            
+                            // Try one more time after reinitializing
+                            setTimeout(() => {
+                                try {
+                                    if (this.running) {
+                                        this.recognition.start();
+                                    }
+                                } catch (finalErr: unknown) {
+                                    const finalErrorMsg = finalErr instanceof Error ? finalErr.message : String(finalErr);
+                                    error(`[WEBSPEECH] Final restart attempt failed: ${finalErrorMsg}`);
+                                    this.running = false;
+                                }
+                            }, 1000);
+                        }
+                    }
+                }, delay);
+            } else {
+                error("[WEBSPEECH] Maximum reconnection attempts reached. Recognition stopped.");
+                this.running = false;
+            }
         } else {
             info("[WEBSPEECH] Recognition ended as expected.");
         }
@@ -77,8 +124,9 @@ export class WebSpeech extends Recognizer {
             setTimeout(() => {
                 try {
                     this.recognition.start();
-                } catch (e) {
-                    error(`[WEBSPEECH] Failed to restart recognition after no match: ${e}`);
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : String(err);
+                    error(`[WEBSPEECH] Failed to restart recognition after no match: ${errorMessage}`);
                     // Reset running state if restart failed
                     this.running = false;
                 }
@@ -89,6 +137,24 @@ export class WebSpeech extends Recognizer {
     private handleOnError(e: { error?: string }): void {
         if (e.error && e.error.trim().length !== 0) {
             error("[WEBSPEECH] Error: " + e.error);
+            
+            // Handle specific error types
+            if (e.error === 'no-speech') {
+                info("[WEBSPEECH] No speech detected, this is normal");
+                // No need for special handling, the API will auto-restart
+                return;
+            } else if (e.error === 'network') {
+                error("[WEBSPEECH] Network error occurred");
+                // Use longer delay for network errors
+                if (this.running) {
+                    setTimeout(() => this.restart(), 2000);
+                }
+                return;
+            } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                error("[WEBSPEECH] Speech recognition permission denied");
+                this.running = false;
+                return;
+            }
         }
 
         // Only try to restart if we're supposed to be running
@@ -97,8 +163,9 @@ export class WebSpeech extends Recognizer {
             setTimeout(() => {
                 try {
                     this.recognition.start();
-                } catch (e) {
-                    error(`[WEBSPEECH] Failed to restart recognition after error: ${e}`);
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : String(err);
+                    error(`[WEBSPEECH] Failed to restart recognition after error: ${errorMessage}`);
                     // Reset running state if restart failed
                     this.running = false;
                 }
@@ -119,8 +186,9 @@ export class WebSpeech extends Recognizer {
                     
                     this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
                     info(`[WEBSPEECH] Using specific microphone: ${this.selectedMicrophoneId}`);
-                } catch (e) {
-                    error(`[WEBSPEECH] Error accessing specific microphone: ${e}. Falling back to default.`);
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : String(err);
+                    error(`[WEBSPEECH] Error accessing specific microphone: ${errorMessage}. Falling back to default.`);
                     this.selectedMicrophoneId = null;
                 }
             }
@@ -128,8 +196,9 @@ export class WebSpeech extends Recognizer {
             // Start recognition
             this.recognition.start();
             info("[WEBSPEECH] Recognition started!");
-        } catch (e: unknown) {
-            error("[WEBSPEECH] Error starting recognition: " + e);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            error(`[WEBSPEECH] Error starting recognition: ${errorMessage}`);
             // Reset running state if we failed to start
             this.running = false;
         }
@@ -153,8 +222,9 @@ export class WebSpeech extends Recognizer {
             }
             
             info("[WEBSPEECH] Recognition stopped!");
-        } catch (e) {
-            error(`[WEBSPEECH] Error stopping recognition: ${e}`);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            error(`[WEBSPEECH] Error stopping recognition: ${errorMessage}`);
         }
     }
 
@@ -164,6 +234,9 @@ export class WebSpeech extends Recognizer {
         
         // First stop
         this.stop();
+        
+        // Reset reconnect attempts on manual restart
+        this.reconnectAttempts = 0;
         
         // Then start after a delay if it was running
         if (wasRunning) {
@@ -192,10 +265,14 @@ export class WebSpeech extends Recognizer {
             try {
                 // First try to stop the current recognition instance
                 this.stop();
-            } catch (e) {
-                error(`[WEBSPEECH] Error stopping recognition during language change: ${e}`);
+            } catch (err: unknown) {
+                const errorMessage = err instanceof Error ? err.message : String(err);
+                error(`[WEBSPEECH] Error stopping recognition during language change: ${errorMessage}`);
                 // Continue anyway to attempt a clean restart
             }
+            
+            // Reset reconnect attempts on language change
+            this.reconnectAttempts = 0;
             
             // Short delay to ensure the previous session is fully terminated
             setTimeout(() => {
@@ -225,8 +302,9 @@ export class WebSpeech extends Recognizer {
                     } else {
                         info("[WEBSPEECH] Recognition was not running, language updated");
                     }
-                } catch (e) {
-                    error(`[WEBSPEECH] Error recreating recognition instance: ${e}`);
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : String(err);
+                    error(`[WEBSPEECH] Error recreating recognition instance: ${errorMessage}`);
                     this.running = false;
                     
                     // One final attempt with the original method
@@ -236,13 +314,15 @@ export class WebSpeech extends Recognizer {
                                 this.start();
                             }, 500);
                         }
-                    } catch (finalError) {
-                        error(`[WEBSPEECH] Fatal error during language change: ${finalError}`);
+                    } catch (finalErr: unknown) {
+                        const finalErrorMsg = finalErr instanceof Error ? finalErr.message : String(finalErr);
+                        error(`[WEBSPEECH] Fatal error during language change: ${finalErrorMsg}`);
                     }
                 }
             }, 300);
-        } catch (mainError) {
-            error(`[WEBSPEECH] Error in set_lang: ${mainError}`);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            error(`[WEBSPEECH] Error in set_lang: ${errorMessage}`);
         }
     }
     
@@ -251,6 +331,9 @@ export class WebSpeech extends Recognizer {
         
         debug(`[WEBSPEECH] Changing microphone to ${deviceId || 'default'}`);
         this.selectedMicrophoneId = deviceId;
+        
+        // Reset reconnect attempts on microphone change
+        this.reconnectAttempts = 0;
         
         // Restart recognition with the new microphone
         this.restart();

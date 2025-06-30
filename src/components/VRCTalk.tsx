@@ -14,10 +14,13 @@ interface VRCTalkProps {
   setConfig: React.Dispatch<React.SetStateAction<Config | null>>;
 }
 
-// Move global speech recognizer to React component state
-// This will persist when component unmounts/remounts during tab switching
+// Global variables for detection queue and lock
 let detectionQueue: string[] = [];
 let lock = false;
+
+// Global speech recognition instance to prevent multiple instances
+let globalSpeechRecognizer: Recognizer | null = null;
+let globalSRInitialized = false;
 
 const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   const [detecting, setDetecting] = useState(false);
@@ -36,9 +39,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   const [targetLanguage, setTargetLanguage] = useState(config.target_language);
   const [isChangingLanguage, setIsChangingLanguage] = useState(false);
 
-  // Store SR in a React ref so it persists between renders but doesn't cause re-renders
-  const [sr, setSr] = useState<Recognizer | null>(null);
-  const [initialized, setInitialized] = useState(false);
+  // Use global speech recognizer to prevent multiple instances
+  const [sr, setSr] = useState<Recognizer | null>(globalSpeechRecognizer);
   
   // Update config when language selections change
   useEffect(() => {
@@ -232,10 +234,40 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   
   // Initialize speech recognition and VRC mute listener
   useEffect(() => {
-    if (initialized) return; // Only initialize once
+    // Only initialize if not already initialized globally
+    if (globalSRInitialized && globalSpeechRecognizer) {
+      info("[SR] Using existing global speech recognizer");
+      setSr(globalSpeechRecognizer);
+      
+      // Force restart the global speech recognizer to ensure it's working
+      info("[SR] Force restarting existing global speech recognizer after component remount");
+      
+      // First stop any existing recognition
+      if (globalSpeechRecognizer.status()) {
+        info("[SR] Stopping existing recognition before restart");
+        globalSpeechRecognizer.stop();
+      }
+      
+      // Then restart after a short delay
+      setTimeout(() => {
+        if (globalSpeechRecognizer && recognitionActive) {
+          info("[SR] Executing restart of global speech recognizer");
+          globalSpeechRecognizer.restart();
+          
+          // Double check that recognition is actually running after restart
+          setTimeout(() => {
+            if (globalSpeechRecognizer && recognitionActive && !globalSpeechRecognizer.status()) {
+              info("[SR] Recognition still not running after restart, forcing start");
+              globalSpeechRecognizer.start();
+            }
+          }, 1000);
+        }
+      }, 500);
+      return;
+    }
     
-    info("[SR] Initializing speech recognition");
-    setInitialized(true);
+    info("[SR] Initializing new speech recognition");
+    globalSRInitialized = true;
     
     // Listen for VRChat mute status
     const unlistenVrcMute = listen<boolean>("vrchat-mute", (event) => {
@@ -319,6 +351,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     
     // Initialize speech recognition
     const recognizer = new WebSpeech(config.source_language, config.selected_microphone);
+    globalSpeechRecognizer = recognizer;
     setSr(recognizer);
       
     // Set up the result handler
@@ -352,12 +385,59 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       unlistenVrcMute.then(unlisten => unlisten());
       unlistenVrcStatus.then(unlisten => unlisten());
       unlistenVrcError.then(unlisten => unlisten());
+      
+      // Don't destroy the global speech recognizer, just stop it temporarily
+      if (sr && sr === globalSpeechRecognizer) {
+        info("[SR] Pausing speech recognition on component unmount (keeping global instance)");
+        // Don't call sr.stop() here to avoid conflicts when remounting
+      }
     };
-  }, [initialized]); // Only run on initial component mount
+  }, []); // Run on every component mount/unmount
+  
+  // Improve the speech recognizer restart logic when returning from settings tab
+  useEffect(() => {
+    if (sr && recognitionActive) {
+      info(`[SR] Recognition check - active: ${recognitionActive}, status: ${sr.status()}`);
+      
+      if (!sr.status()) {
+        info("[SR] Starting/resuming recognition");
+        
+        // First ensure any previous instances are fully stopped
+        try {
+          sr.stop();
+          // Short delay to ensure clean state
+          setTimeout(() => {
+            if (sr && recognitionActive) {
+              info("[SR] Starting recognition after delay");
+              sr.start();
+            }
+          }, 300);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          error(`[SR] Error restarting recognition: ${errorMessage}`);
+          
+          // Try to reinitialize if we encounter errors
+          setTimeout(() => {
+            if (sr && recognitionActive) {
+              info("[SR] Reinitializing speech recognition after error");
+              sr.restart();
+            }
+          }, 500);
+        }
+      } else {
+        info("[SR] Speech recognition already running");
+      }
+    } else if (sr && !recognitionActive) {
+      info("[SR] Recognition should be inactive, ensuring it's stopped");
+      if (sr.status()) {
+        sr.stop();
+      }
+    }
+  }, [sr, recognitionActive]);
   
   // Handle changes in microphone
   useEffect(() => {
-    if (defaultMicrophone === "Initializing...") return;
+    if (defaultMicrophone === "Initializing..." || defaultMicrophone === "Microphone Active") return;
     
     info(`[MEDIA] Current microphone: ${defaultMicrophone}`);
     
@@ -366,9 +446,21 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       return;
     }
     
+    // Log microphone changes but don't automatically reload
+    // The global speech recognizer should handle microphone changes gracefully
     if (lastDefaultMicrophone !== defaultMicrophone) {
-      info("[MEDIA] Microphone changed, reloading...");
-      window.location.reload();
+      info(`[MEDIA] Microphone changed from "${lastDefaultMicrophone}" to "${defaultMicrophone}"`);
+      setLastDefaultMicrophone(defaultMicrophone);
+      
+      // Instead of reloading, just restart the speech recognition if needed
+      if (sr && recognitionActive) {
+        info("[MEDIA] Restarting speech recognition due to microphone change");
+        setTimeout(() => {
+          if (sr) {
+            sr.restart();
+          }
+        }, 500);
+      }
     }
   }, [defaultMicrophone]);
   
@@ -407,6 +499,32 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   useEffect(() => {
     if (sr && config.selected_microphone !== undefined) {
       info(`[SR] Selected microphone changed to: ${config.selected_microphone || 'default'}`);
+      
+      // Log the current available microphones for debugging
+      navigator.mediaDevices.enumerateDevices()
+        .then(devices => {
+          const audioInputs = devices.filter(device => device.kind === 'audioinput');
+          if (audioInputs.length > 0) {
+            const micList = audioInputs.map(device => 
+              `${device.label || 'Unnamed device'} (${device.deviceId.substring(0, 8)}...)`
+            ).join(', ');
+            info(`[SR] Available microphones: ${micList}`);
+            
+            // Check if selected microphone is in the list
+            if (config.selected_microphone) {
+              const found = audioInputs.some(device => device.deviceId === config.selected_microphone);
+              if (!found) {
+                error(`[SR] Warning: Selected microphone ${config.selected_microphone.substring(0, 8)}... not found in available devices`);
+              }
+            }
+          } else {
+            error('[SR] No audio input devices found');
+          }
+        })
+        .catch(e => {
+          error(`[SR] Error enumerating media devices: ${e instanceof Error ? e.message : String(e)}`);
+        });
+      
       sr.set_microphone(config.selected_microphone);
     }
   }, [config.selected_microphone, sr]);
@@ -602,6 +720,78 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     
     return () => clearTimeout(timer);
   }, [sourceLanguage]);
+
+  // Update the component mount/unmount effect
+  useEffect(() => {
+    // Log when the VRCTalk component is mounted
+    info('[VRCTALK] Component mounted');
+    info(`[VRCTALK] Global SR initialized: ${globalSRInitialized}, Global SR exists: ${!!globalSpeechRecognizer}`);
+    info(`[VRCTALK] Recognition active: ${recognitionActive}, SR status: ${sr ? sr.status() : 'no sr'}`);
+    
+    // If we need to initialize speech recognition on mount
+    if (sr && recognitionActive && !sr.status()) {
+      info('[VRCTALK] Starting speech recognition on component mount');
+      sr.start();
+    }
+    
+    return () => {
+      // Log when the VRCTalk component is unmounted (tab changed)
+      info('[VRCTALK] Component unmounting');
+      info(`[VRCTALK] SR status at unmount: ${sr ? sr.status() : 'no sr'}`);
+      
+      try {
+        // Only handle the speech recognizer if it exists
+        if (sr) {
+          // Store the current recognition state in a variable to restore it later
+          const wasRunning = sr.status();
+          info(`[VRCTALK] Recognition state at unmount: ${wasRunning ? 'running' : 'stopped'}`);
+          
+          // We want to preserve the global speech recognizer instance
+          // but pause it temporarily during tab switch to avoid issues
+          if (wasRunning) {
+            info('[VRCTALK] Pausing global speech recognizer during tab switch');
+            
+            // We'll use a flag in localStorage to track that we need to restart on return
+            localStorage.setItem('vrctalk_recognition_paused', 'true');
+            
+            // Temporarily stop the recognizer
+            sr.stop();
+            
+            // Schedule a restart after a short delay in case we return quickly
+            setTimeout(() => {
+              // Only restart if we're still on the settings page (not returned to main yet)
+              if (document.location.hash.includes('settings') && sr && !sr.status()) {
+                info('[VRCTALK] Restarting recognition after pause');
+                sr.start();
+              }
+            }, 2000);
+          }
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        error(`[VRCTALK] Error during component unmount: ${errorMessage}`);
+      }
+    };
+  }, []);
+
+  // Add an effect that runs when the component mounts to check if we need to restore recognition
+  useEffect(() => {
+    // Check if we need to restore recognition state
+    const needsRestore = localStorage.getItem('vrctalk_recognition_paused') === 'true';
+    
+    if (needsRestore && sr && recognitionActive && !sr.status()) {
+      info('[VRCTALK] Restoring speech recognition after tab switch');
+      localStorage.removeItem('vrctalk_recognition_paused');
+      
+      // Short delay to ensure component is fully mounted
+      setTimeout(() => {
+        if (sr && recognitionActive && !sr.status()) {
+          info('[VRCTALK] Starting speech recognition after restoration');
+          sr.restart(); // Use restart instead of start for a clean state
+        }
+      }, 500);
+    }
+  }, [sr, recognitionActive]);
 
   // UI component return
   return (

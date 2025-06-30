@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { loadConfig, Config } from '../utils/config';
 import VRCTalk from './VRCTalk';
 import Settings from './Settings';
+import { info, error } from '@tauri-apps/plugin-log';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'main' | 'settings'>('main');
+  const [showSettings, setShowSettings] = useState<boolean>(false);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -13,8 +14,10 @@ const App: React.FC = () => {
       try {
         const loadedConfig = await loadConfig();
         setConfig(loadedConfig);
-      } catch (error) {
-        console.error('Failed to load configuration:', error);
+        info('[APP] Configuration loaded successfully');
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        error(`[APP] Failed to load configuration: ${errorMessage}`);
       } finally {
         setLoading(false);
       }
@@ -22,6 +25,18 @@ const App: React.FC = () => {
 
     initConfig();
   }, []);
+
+  // Handle settings dialog open/close with logging
+  const handleSettingsToggle = () => {
+    try {
+      info(`[APP] ${showSettings ? 'Closing' : 'Opening'} settings dialog`);
+      setShowSettings(!showSettings);
+      info(`[APP] Settings dialog ${showSettings ? 'closed' : 'opened'} successfully`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error(`[APP] Error toggling settings dialog: ${errorMessage}`);
+    }
+  };
 
   if (loading || !config) {
     return (
@@ -58,28 +73,12 @@ const App: React.FC = () => {
               VRC<span className="text-blue-400">Talk</span>
               <span className="ml-1.5 px-1.5 py-0.5 bg-blue-600 text-xs text-white font-medium rounded">v0.1.3</span>
             </h1>
-            <nav className="flex space-x-1.5 ml-2">
-              <button 
-                onClick={() => setActiveTab('main')}
-                className={`px-3 py-1 rounded-md font-medium transition-all duration-300 text-sm ${
-                  activeTab === 'main' 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' 
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-              >
-                Main
-              </button>
-              <button 
-                onClick={() => setActiveTab('settings')}
-                className={`px-3 py-1 rounded-md font-medium transition-all duration-300 text-sm ${
-                  activeTab === 'settings' 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' 
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-              >
-                Settings
-              </button>
-            </nav>
+            <button 
+              onClick={handleSettingsToggle}
+              className="px-3 py-1 rounded-md font-medium transition-all duration-300 text-sm bg-white/10 text-white/80 hover:bg-white/20"
+            >
+              Settings
+            </button>
           </div>
         </div>
       </header>
@@ -88,18 +87,41 @@ const App: React.FC = () => {
       <main className="flex-1 flex justify-center overflow-y-auto py-4">
         <div className="w-full max-w-2xl px-4 animate-fade-in">
           <div className="transition-all duration-300 transform">
-            {activeTab === 'main' ? (
-              <div className="animate-slide-up">
-                <VRCTalk config={config} setConfig={setConfig} />
-              </div>
-            ) : (
-              <div className="animate-slide-up">
-                <Settings config={config} setConfig={setConfig} />
-              </div>
-            )}
+            <div className="animate-slide-up">
+              <VRCTalk config={config} setConfig={setConfig} />
+            </div>
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div 
+            className="bg-gray-900 w-11/12 max-w-2xl max-h-[90vh] rounded-lg shadow-2xl border border-white/10 overflow-hidden animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center border-b border-gray-700 px-4 py-3">
+              <h2 className="text-lg font-semibold text-white">Settings</h2>
+              <button 
+                onClick={handleSettingsToggle}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[calc(90vh-64px)]">
+              <Settings 
+                config={config} 
+                setConfig={setConfig} 
+                onClose={handleSettingsToggle} 
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

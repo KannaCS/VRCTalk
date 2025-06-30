@@ -232,17 +232,67 @@ export class WebSpeech extends Recognizer {
         info("[WEBSPEECH] Forcing restart of recognition");
         const wasRunning = this.running;
         
-        // First stop
-        this.stop();
-        
-        // Reset reconnect attempts on manual restart
-        this.reconnectAttempts = 0;
-        
-        // Then start after a delay if it was running
-        if (wasRunning) {
-            setTimeout(() => {
-                this.start();
-            }, 500);
+        try {
+            // First stop and clean up any existing resources
+            this.stop();
+            
+            // Reset state
+            this.reconnectAttempts = 0;
+            this.running = false;
+            
+            // Ensure any audio resources are properly cleaned up
+            if (this.audioStream) {
+                const tracks = this.audioStream.getTracks();
+                tracks.forEach(track => track.stop());
+                this.audioStream = null;
+            }
+            
+            if (this.audioContext) {
+                this.audioContext.close();
+                this.audioContext = null;
+            }
+            
+            // Reinitialize the recognition object to ensure a clean slate
+            info("[WEBSPEECH] Reinitializing recognition object during restart");
+            this.initRecognition();
+            
+            // Then start after a delay if it was running
+            if (wasRunning) {
+                this.running = true;
+                setTimeout(() => {
+                    try {
+                        info("[WEBSPEECH] Starting recognition after restart");
+                        this.start();
+                    } catch (err: unknown) {
+                        const errorMessage = err instanceof Error ? err.message : String(err);
+                        error(`[WEBSPEECH] Error starting recognition after restart: ${errorMessage}`);
+                        
+                        // One final attempt with a longer delay
+                        setTimeout(() => {
+                            try {
+                                info("[WEBSPEECH] Final attempt to start recognition");
+                                this.start();
+                            } catch (finalErr: unknown) {
+                                const finalErrorMsg = finalErr instanceof Error ? finalErr.message : String(finalErr);
+                                error(`[WEBSPEECH] Final restart attempt failed: ${finalErrorMsg}`);
+                                this.running = false;
+                            }
+                        }, 1000);
+                    }
+                }, 500);
+            }
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            error(`[WEBSPEECH] Error during restart: ${errorMessage}`);
+            
+            // Attempt recovery
+            this.reconnectAttempts = 0;
+            this.initRecognition();
+            
+            if (wasRunning) {
+                this.running = true;
+                setTimeout(() => this.start(), 1000);
+            }
         }
     }
 
@@ -327,16 +377,52 @@ export class WebSpeech extends Recognizer {
     }
     
     set_microphone(deviceId: string | null): void {
-        if (deviceId === this.selectedMicrophoneId) return;
+        if (deviceId === this.selectedMicrophoneId) {
+            debug(`[WEBSPEECH] Microphone unchanged: ${deviceId || 'default'}`);
+            return;
+        }
         
-        debug(`[WEBSPEECH] Changing microphone to ${deviceId || 'default'}`);
+        info(`[WEBSPEECH] Changing microphone from ${this.selectedMicrophoneId || 'default'} to ${deviceId || 'default'}`);
         this.selectedMicrophoneId = deviceId;
         
         // Reset reconnect attempts on microphone change
         this.reconnectAttempts = 0;
         
-        // Restart recognition with the new microphone
-        this.restart();
+        // Check if the microphone is available before restarting
+        if (deviceId) {
+            navigator.mediaDevices.enumerateDevices()
+                .then(devices => {
+                    const audioInputs = devices.filter(device => device.kind === "audioinput");
+                    const selectedDevice = audioInputs.find(device => device.deviceId === deviceId);
+                    
+                    if (selectedDevice) {
+                        info(`[WEBSPEECH] Found selected microphone: ${selectedDevice.label || deviceId}`);
+                        // Restart recognition with the new microphone
+                        this.restart();
+                    } else {
+                        error(`[WEBSPEECH] Error: Selected microphone ${deviceId} not found in available devices`);
+                        const availableMics = audioInputs.map(device => `${device.label || 'Unnamed'} (${device.deviceId.substring(0, 8)}...)`).join(', ');
+                        error(`[WEBSPEECH] Available microphones: ${availableMics || 'None'}`);
+                        
+                        // Fall back to default microphone
+                        info(`[WEBSPEECH] Falling back to default microphone`);
+                        this.selectedMicrophoneId = null;
+                        this.restart();
+                    }
+                })
+                .catch(err => {
+                    const errorMessage = err instanceof Error ? err.message : String(err);
+                    error(`[WEBSPEECH] Error accessing media devices when changing microphone: ${errorMessage}`);
+                    // Fall back to default microphone
+                    info(`[WEBSPEECH] Falling back to default microphone due to error`);
+                    this.selectedMicrophoneId = null;
+                    this.restart();
+                });
+        } else {
+            // If deviceId is null, we're intentionally using the default microphone
+            info(`[WEBSPEECH] Using default system microphone`);
+            this.restart();
+        }
     }
 
     status(): boolean {

@@ -121,7 +121,8 @@ export function validateConfig(config: Config): Config {
     if (config.source_language) validated.source_language = config.source_language;
     if (config.target_language) validated.target_language = config.target_language;
     if (typeof config.mode === 'number') validated.mode = config.mode;
-    if (config.selected_microphone !== undefined) validated.selected_microphone = config.selected_microphone;
+    // Microphone selection is no longer user-configurable – always use system default
+    validated.selected_microphone = null;
     
     // Language settings
     if (config.language_settings) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Config, saveConfig, speed_presets } from '../utils/config';
 import { info, error } from '@tauri-apps/plugin-log';
 
@@ -15,8 +15,15 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{text: string, isError: boolean} | null>(null);
 
-  // Initialize microphone list
-  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  // After state declarations
+  const hasChangesRef = useRef(hasChanges);
+  const latestConfigRef = useRef(localConfig);
+
+  // Keep refs updated with the latest state on every render
+  useEffect(() => {
+    hasChangesRef.current = hasChanges;
+    latestConfigRef.current = localConfig;
+  }, [hasChanges, localConfig]);
 
   // Update local config when the parent config changes
   useEffect(() => {
@@ -37,28 +44,22 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     // Log when the Settings component is mounted
     info('[SETTINGS] Component mounted as modal');
     
-    // Load available microphones
-    const loadMicrophones = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter(device => device.kind === 'audioinput');
-        setMicrophones(audioInputs);
-        info(`[SETTINGS] Loaded ${audioInputs.length} microphones`);
-      } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        error(`[SETTINGS] Error loading microphones: ${errorMessage}`);
-      }
-    };
-    
-    loadMicrophones();
-    
     return () => {
       info('[SETTINGS] Settings modal closing');
-      
       // Auto-save changes when closing if there are unsaved changes
-      if (hasChanges) {
+      if (hasChangesRef.current) {
         info('[SETTINGS] Auto-saving changes on modal close');
-        handleSave();
+        // Persist directly without touching local component state to avoid memory leaks
+        const cfgToSave = latestConfigRef.current;
+        saveConfig(cfgToSave)
+          .then(() => {
+            setConfig(cfgToSave);
+            info('[SETTINGS] Auto-save completed');
+          })
+          .catch(e => {
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            error(`[SETTINGS] Auto-save failed: ${errorMessage}`);
+          });
       }
     };
   }, []);
@@ -70,14 +71,14 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     }));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (cfg: Config = localConfig) => {
     setIsSaving(true);
     setSaveMessage(null);
     
     try {
       info('[SETTINGS] Saving configuration changes');
-      await saveConfig(localConfig);
-      setConfig(localConfig);
+      await saveConfig(cfg);
+      setConfig(cfg);
       setSaveMessage({ text: 'Settings saved successfully!', isError: false });
       setHasChanges(false);
       info('[SETTINGS] Configuration saved successfully');
@@ -105,48 +106,6 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     if (onClose) {
       onClose();
     }
-  };
-
-  // Format microphone name for display
-  const formatMicrophoneName = (deviceInfo: MediaDeviceInfo) => {
-    if (!deviceInfo.label) return `Microphone (${deviceInfo.deviceId.slice(0, 8)}...)`;
-    
-    // Extract name from common formats like "Microphone (Device Name)"
-    const match = deviceInfo.label.match(/^[^(]+ \(([^)]+)\)$/);
-    return match ? match[1] : deviceInfo.label || `Microphone (${deviceInfo.deviceId.slice(0, 8)}...)`;
-  };
-
-  // Modify the handleMicrophoneChange function to work with radio buttons
-  const handleMicrophoneChange = (deviceId: string | null) => {
-    info(`[SETTINGS] User selected microphone: ${deviceId || 'default'}`);
-    
-    // Verify the selected microphone exists
-    navigator.mediaDevices.enumerateDevices()
-      .then(devices => {
-        const audioInputs = devices.filter(device => device.kind === 'audioinput');
-        if (deviceId) {
-          const selectedDevice = audioInputs.find(device => device.deviceId === deviceId);
-          if (selectedDevice) {
-            info(`[SETTINGS] Selected valid microphone: ${selectedDevice.label || deviceId}`);
-          } else {
-            error(`[SETTINGS] Warning: Selected microphone ${deviceId} not found in available devices`);
-          }
-        } else {
-          info('[SETTINGS] Using default microphone');
-        }
-        
-        // Update config with the new microphone selection
-        updateLocalConfig({
-          selected_microphone: deviceId
-        });
-      })
-      .catch(e => {
-        error(`[SETTINGS] Error verifying microphone selection: ${e instanceof Error ? e.message : String(e)}`);
-        // Still update the config even if verification fails
-        updateLocalConfig({
-          selected_microphone: deviceId
-        });
-      });
   };
 
   return (
@@ -190,44 +149,6 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 <option value="de">German</option>
                 <option value="ru">Russian</option>
               </select>
-            </div>
-          </div>
-        </div>
-        
-        {/* Microphone Settings */}
-        <div>
-          <h3 className="text-lg font-medium text-white mb-3">Microphone Settings</h3>
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="space-y-3">
-              <div className="flex items-center">
-                <input
-                  type="radio"
-                  id="default-mic"
-                  name="selected-mic"
-                  checked={localConfig.selected_microphone === null}
-                  onChange={() => handleMicrophoneChange(null)}
-                  className="form-radio h-5 w-5 text-blue-600"
-                />
-                <label htmlFor="default-mic" className="ml-2 text-white">
-                  Use Default Microphone
-                </label>
-              </div>
-              
-              {microphones.map(mic => (
-                <div key={mic.deviceId} className="flex items-center">
-                  <input
-                    type="radio"
-                    id={`mic-${mic.deviceId}`}
-                    name="selected-mic"
-                    checked={localConfig.selected_microphone === mic.deviceId}
-                    onChange={() => handleMicrophoneChange(mic.deviceId)}
-                    className="form-radio h-5 w-5 text-blue-600"
-                  />
-                  <label htmlFor={`mic-${mic.deviceId}`} className="ml-2 text-white truncate">
-                    {formatMicrophoneName(mic)}
-                  </label>
-                </div>
-              ))}
             </div>
           </div>
         </div>
@@ -291,7 +212,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => { void handleSave(); }}
             disabled={isSaving || !hasChanges}
             className={`px-4 py-2 rounded-md transition-colors ${
               hasChanges 

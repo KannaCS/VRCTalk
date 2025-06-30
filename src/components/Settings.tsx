@@ -109,58 +109,90 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   };
 
   return (
-    <div className="text-white">
-      <div className="space-y-6">
-        {/* Language Settings */}
-        <div>
-          <h3 className="text-lg font-medium text-white mb-3">Language Settings</h3>
-          <div className="bg-gray-800 rounded-lg p-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Source Language</label>
-              <select
-                value={localConfig.source_language}
-                onChange={(e) => updateLocalConfig({ source_language: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-md px-3 py-2 border border-gray-600 focus:border-blue-500 focus:ring focus:ring-blue-500/20 focus:outline-none"
-              >
-                <option value="en-US">English (US)</option>
-                <option value="ja-JP">Japanese</option>
-                <option value="ko-KR">Korean</option>
-                <option value="zh-CN">Chinese (Simplified)</option>
-                <option value="es-ES">Spanish</option>
-                <option value="fr-FR">French</option>
-                <option value="de-DE">German</option>
-                <option value="ru-RU">Russian</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Target Language</label>
-              <select
-                value={localConfig.target_language}
-                onChange={(e) => updateLocalConfig({ target_language: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-md px-3 py-2 border border-gray-600 focus:border-blue-500 focus:ring focus:ring-blue-500/20 focus:outline-none"
-              >
-                <option value="ja">Japanese</option>
-                <option value="en">English</option>
-                <option value="ko">Korean</option>
-                <option value="zh-CN">Chinese (Simplified)</option>
-                <option value="es">Spanish</option>
-                <option value="fr">French</option>
-                <option value="de">German</option>
-                <option value="ru">Russian</option>
-              </select>
-            </div>
+    <div className="space-y-8">
+      {/* Language Settings */}
+      <div className="modern-card animate-slide-up">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-white">Language Settings</h3>
+            <p className="text-white/60 text-sm">Configure source and target languages</p>
           </div>
         </div>
         
-        {/* VRChat Settings */}
-        <div>
-          <h3 className="text-lg font-medium text-white mb-3">VRChat Settings</h3>
-          <div className="bg-gray-800 rounded-lg p-4 space-y-4">
-            <div className="flex items-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-white/80">
+              Source Language
+            </label>
+            <select
+              value={localConfig.source_language}
+              onChange={(e) => updateLocalConfig({ source_language: e.target.value })}
+              className="select-modern"
+            >
+              <option value="en-US">English (US)</option>
+              <option value="ja-JP">Japanese</option>
+              <option value="ko-KR">Korean</option>
+              <option value="zh-CN">Chinese (Simplified)</option>
+              <option value="es-ES">Spanish</option>
+              <option value="fr-FR">French</option>
+              <option value="de-DE">German</option>
+              <option value="ru-RU">Russian</option>
+            </select>
+          </div>
+          
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-white/80">
+              Target Language
+            </label>
+            <select
+              value={localConfig.target_language}
+              onChange={(e) => updateLocalConfig({ target_language: e.target.value })}
+              className="select-modern"
+            >
+              <option value="ja">Japanese</option>
+              <option value="en">English</option>
+              <option value="ko">Korean</option>
+              <option value="zh-CN">Chinese (Simplified)</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="ru">Russian</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      {/* VRChat Settings */}
+      <div className="modern-card animate-slide-up animate-delay-100">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-white">VRChat Integration</h3>
+            <p className="text-white/60 text-sm">Configure VRChat-specific features</p>
+          </div>
+        </div>
+        
+        <div className="space-y-6">
+          {/* Disable when muted toggle */}
+          <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+            <div className="flex-1">
+              <h4 className="text-white font-medium">Disable when muted</h4>
+              <p className="text-white/60 text-sm mt-1">
+                Automatically pause translation when you're muted in VRChat
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer ml-4">
               <input
                 type="checkbox"
-                id="disable-when-muted"
                 checked={localConfig.vrchat_settings.disable_when_muted}
                 onChange={(e) => updateLocalConfig({ 
                   vrchat_settings: {
@@ -168,15 +200,18 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                     disable_when_muted: e.target.checked
                   }
                 })}
-                className="form-checkbox h-5 w-5 text-blue-600"
+                className="sr-only peer"
               />
-              <label htmlFor="disable-when-muted" className="ml-2 text-white">
-                Disable translation when muted in VRChat
-              </label>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Speech Speed</label>
+              <div className="relative w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-500 peer-checked:to-purple-600"></div>
+            </label>
+          </div>
+          
+          {/* Speech Speed Setting */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-white/80">
+              Chatbox Update Speed
+            </label>
+            <div className="relative">
               <select
                 value={String(localConfig.vrchat_settings.chatbox_update_speed)}
                 onChange={(e) => updateLocalConfig({ 
@@ -185,42 +220,157 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                     chatbox_update_speed: Number(e.target.value)
                   }
                 })}
-                className="w-full bg-gray-700 text-white rounded-md px-3 py-2 border border-gray-600 focus:border-blue-500 focus:ring focus:ring-blue-500/20 focus:outline-none appearance-auto"
-                style={{ color: 'white', backgroundColor: '#374151' }}
+                className="select-modern"
               >
                 {Object.entries(speed_presets).map(([key, value]) => (
-                  <option key={key} value={String(value)} style={{ backgroundColor: '#374151', color: 'white' }}>
-                    {key.charAt(0).toUpperCase() + key.slice(1)}
+                  <option key={key} value={String(value)}>
+                    {key.charAt(0).toUpperCase() + key.slice(1)} ({value}ms)
                   </option>
                 ))}
               </select>
             </div>
+            <p className="text-white/50 text-xs">
+              Controls how quickly messages appear in VRChat's chatbox
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Settings */}
+      <div className="modern-card animate-slide-up animate-delay-200">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-white">Advanced Settings</h3>
+            <p className="text-white/60 text-sm">Fine-tune your translation experience</p>
           </div>
         </div>
         
-        {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 mt-6">
-          {saveMessage && (
-            <div className={`py-2 px-3 rounded text-sm ${saveMessage.isError ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`}>
-              {saveMessage.text}
+        <div className="space-y-6">
+          {/* Mode Selection */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-white/80">
+              Operation Mode
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.mode === 0 
+                  ? 'bg-gradient-to-r from-blue-500/20 to-purple-600/20 border-2 border-blue-500/50' 
+                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+              }`}>
+                <input
+                  type="radio"
+                  name="mode"
+                  value={0}
+                  checked={localConfig.mode === 0}
+                  onChange={(e) => updateLocalConfig({ mode: Number(e.target.value) })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">Translation Mode</div>
+                  <div className="text-white/60 text-sm mt-1">
+                    Translate speech and send to VRChat
+                  </div>
+                </div>
+                {localConfig.mode === 0 && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
+              
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.mode === 1 
+                  ? 'bg-gradient-to-r from-green-500/20 to-blue-600/20 border-2 border-green-500/50' 
+                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+              }`}>
+                <input
+                  type="radio"
+                  name="mode"
+                  value={1}
+                  checked={localConfig.mode === 1}
+                  onChange={(e) => updateLocalConfig({ mode: Number(e.target.value) })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">Transcription Mode</div>
+                  <div className="text-white/60 text-sm mt-1">
+                    Send speech directly without translation
+                  </div>
+                </div>
+                {localConfig.mode === 1 && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-green-500 to-blue-600 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
             </div>
-          )}
+          </div>
+        </div>
+      </div>
+      
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 animate-slide-up animate-delay-300">
+        {/* Save Message */}
+        {saveMessage && (
+          <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-medium ${
+            saveMessage.isError 
+              ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
+              : 'bg-green-500/20 text-green-300 border border-green-500/30'
+          }`}>
+            {saveMessage.isError ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            )}
+            <span>{saveMessage.text}</span>
+          </div>
+        )}
+        
+        <div className="flex space-x-3">
           <button
             onClick={handleCancel}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+            className="btn-modern bg-white/10 hover:bg-white/20 text-white border border-white/20"
           >
             Cancel
           </button>
           <button
             onClick={() => { void handleSave(); }}
             disabled={isSaving || !hasChanges}
-            className={`px-4 py-2 rounded-md transition-colors ${
+            className={`btn-modern flex items-center space-x-2 ${
               hasChanges 
-                ? 'bg-blue-600 hover:bg-blue-500 text-white' 
-                : 'bg-blue-600/50 text-white/70 cursor-not-allowed'
+                ? 'btn-success' 
+                : 'bg-white/10 text-white/50 cursor-not-allowed'
             }`}
           >
-            {isSaving ? 'Saving...' : 'Save Changes'}
+            {isSaving ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Save Changes</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -228,4 +378,4 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   );
 };
 
-export default Settings; 
+export default Settings;

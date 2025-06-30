@@ -31,7 +31,6 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
   const [defaultMicrophone, setDefaultMicrophone] = useState("Initializing...");
-  const [lastDefaultMicrophone, setLastDefaultMicrophone] = useState("");
   
   const [triggerUpdate, setTriggerUpdate] = useState(false);
   
@@ -189,9 +188,18 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             ? text.replace(/？/g, "") 
             : text;
             
-          const messageFormat = config.vrchat_settings.translation_first 
-            ? `${finalTranslation}${config.vrchat_settings.only_translation ? '' : ` (${originalText})`}`
-            : `${originalText}${config.vrchat_settings.only_translation ? '' : ` (${finalTranslation})`}`;
+          // Build message with tags at ends e.g., [EN] text | translation [JP]
+          const divider = ' | ';
+          const srcTag = `[${sourceLanguage.split('-')[0].toUpperCase()}]`;
+          const tgtTag = `[${targetLanguage.split('-')[0].toUpperCase()}]`;
+
+          let messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
+
+          if (config.vrchat_settings.only_translation) {
+            messageFormat = `${finalTranslation} ${tgtTag}`;
+          } else if (config.vrchat_settings.translation_first) {
+            messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
+          }
           
           try {
             await invoke("send_message", {
@@ -372,8 +380,16 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
         });
       }
       
+      // Update UI with current speech
       setSourceText(result);
       setDetecting(!isFinal);
+
+      // When we get a final transcript, queue it for translation (in translation mode)
+      if (isFinal && config.mode === 0) {
+        detectionQueue.push(result);
+        // Force the translation processing loop to run ASAP
+        setTriggerUpdate(prev => !prev);
+      }
     });
     
     // Start recognition
@@ -393,141 +409,6 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       }
     };
   }, []); // Run on every component mount/unmount
-  
-  // Improve the speech recognizer restart logic when returning from settings tab
-  useEffect(() => {
-    if (sr && recognitionActive) {
-      info(`[SR] Recognition check - active: ${recognitionActive}, status: ${sr.status()}`);
-      
-      if (!sr.status()) {
-        info("[SR] Starting/resuming recognition");
-        
-        // First ensure any previous instances are fully stopped
-        try {
-          sr.stop();
-          // Short delay to ensure clean state
-          setTimeout(() => {
-            if (sr && recognitionActive) {
-              info("[SR] Starting recognition after delay");
-              sr.start();
-            }
-          }, 300);
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          error(`[SR] Error restarting recognition: ${errorMessage}`);
-          
-          // Try to reinitialize if we encounter errors
-          setTimeout(() => {
-            if (sr && recognitionActive) {
-              info("[SR] Reinitializing speech recognition after error");
-              sr.restart();
-            }
-          }, 500);
-        }
-      } else {
-        info("[SR] Speech recognition already running");
-      }
-    } else if (sr && !recognitionActive) {
-      info("[SR] Recognition should be inactive, ensuring it's stopped");
-      if (sr.status()) {
-        sr.stop();
-      }
-    }
-  }, [sr, recognitionActive]);
-  
-  // Handle changes in microphone
-  useEffect(() => {
-    if (defaultMicrophone === "Initializing..." || defaultMicrophone === "Microphone Active") return;
-    
-    info(`[MEDIA] Current microphone: ${defaultMicrophone}`);
-    
-    if (lastDefaultMicrophone === "") {
-      setLastDefaultMicrophone(defaultMicrophone);
-      return;
-    }
-    
-    // Log microphone changes but don't automatically reload
-    // The global speech recognizer should handle microphone changes gracefully
-    if (lastDefaultMicrophone !== defaultMicrophone) {
-      info(`[MEDIA] Microphone changed from "${lastDefaultMicrophone}" to "${defaultMicrophone}"`);
-      setLastDefaultMicrophone(defaultMicrophone);
-      
-      // Instead of reloading, just restart the speech recognition if needed
-      if (sr && recognitionActive) {
-        info("[MEDIA] Restarting speech recognition due to microphone change");
-        setTimeout(() => {
-          if (sr) {
-            sr.restart();
-          }
-        }, 500);
-      }
-    }
-  }, [defaultMicrophone]);
-  
-  // Process detected speech
-  useEffect(() => {
-    if (!sr || isChangingLanguage) return; // Skip processing while language is changing
-    
-    info(`[DETECTION] Status: Detecting=${detecting}, Text length=${sourceText.length}`);
-    
-    if (!detecting && sourceText.length > 0) {
-      if (config.mode === 0) { // Translation mode
-        const processedText = sourceLanguage === "ja" && config.language_settings.omit_questionmark
-          ? sourceText.replace(/？/g, "")
-          : sourceText;
-          
-        detectionQueue = [...detectionQueue, processedText];
-        info(`[DETECTION] Added to translation queue. Queue length: ${detectionQueue.length}`);
-      } else { // Transcription only mode
-        info(`[DETECTION] Sending transcription directly to VRChat`);
-        const messageToSend = sourceLanguage === "ja" && config.language_settings.omit_questionmark
-          ? sourceText.replace(/？/g, "")
-          : sourceText;
-          
-        invoke("send_message", { 
-          address: config.vrchat_settings.osc_address, 
-          port: `${config.vrchat_settings.osc_port}`, 
-          msg: messageToSend 
-        }).catch(e => {
-          error(`[DETECTION] Error sending message to VRChat: ${e}`);
-        });
-      }
-    }
-  }, [detecting, sourceText]);
-  
-  // Effect for handling changes to selected microphone in config
-  useEffect(() => {
-    if (sr && config.selected_microphone !== undefined) {
-      info(`[SR] Selected microphone changed to: ${config.selected_microphone || 'default'}`);
-      
-      // Log the current available microphones for debugging
-      navigator.mediaDevices.enumerateDevices()
-        .then(devices => {
-          const audioInputs = devices.filter(device => device.kind === 'audioinput');
-          if (audioInputs.length > 0) {
-            const micList = audioInputs.map(device => 
-              `${device.label || 'Unnamed device'} (${device.deviceId.substring(0, 8)}...)`
-            ).join(', ');
-            info(`[SR] Available microphones: ${micList}`);
-            
-            // Check if selected microphone is in the list
-            if (config.selected_microphone) {
-              const found = audioInputs.some(device => device.deviceId === config.selected_microphone);
-              if (!found) {
-                error(`[SR] Warning: Selected microphone ${config.selected_microphone.substring(0, 8)}... not found in available devices`);
-              }
-            }
-          } else {
-            error('[SR] No audio input devices found');
-          }
-        })
-        .catch(e => {
-          error(`[SR] Error enumerating media devices: ${e instanceof Error ? e.message : String(e)}`);
-        });
-      
-      sr.set_microphone(config.selected_microphone);
-    }
-  }, [config.selected_microphone, sr]);
   
   // Handle source language change
   const handleSourceLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -653,184 +534,72 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     }, 300);
   };
 
-  // Effect for handling changes to the disable_when_muted setting
-  useEffect(() => {
-    info(`[CONFIG] disable_when_muted changed to ${config.vrchat_settings.disable_when_muted}`);
-    
-    // If disable_when_muted was just turned off and we're currently muted in VRChat,
-    // we need to explicitly restart recognition
-    if (!config.vrchat_settings.disable_when_muted && vrcMuted && recognitionActive && sr) {
-      info("[CONFIG] disable_when_muted turned off while VRChat is muted. Resuming recognition...");
-      setTimeout(() => {
-        if (sr) {
-          sr.restart();
-        }
-      }, 300); // Short delay to ensure state updates properly
-    }
-  }, [config.vrchat_settings.disable_when_muted, vrcMuted, recognitionActive, sr]);
-
-  // Force restart recognition after language changes
-  useEffect(() => {
-    // Skip initial render
-    if (!sr) return;
-    
-    // Reset recognition when the component language state changes
-    // This effect runs after the language props are updated
-    info(`[LANGUAGE_RESET] Ensuring proper recognition state after language update: ${sourceLanguage}`);
-    
-    // Brief pause to let the system stabilize
-    const timer = setTimeout(() => {
-      if (sr) {
-        // First ensure recognition is stopped
-        try {
-          sr.stop();
-        } catch (e) {
-          error(`[LANGUAGE_RESET] Error stopping recognition: ${e}`);
-        }
-        
-        // Then restart if it should be active
-        setTimeout(() => {
-          if (sr && recognitionActive) {
-            info("[LANGUAGE_RESET] Restarting recognition after language change");
-            try {
-              sr.start();
-            } catch (e) {
-              error(`[LANGUAGE_RESET] Error restarting recognition: ${e}`);
-              
-              // As a last resort, try one more restart
-              setTimeout(() => {
-                if (sr && recognitionActive) {
-                  try {
-                    sr.restart();
-                  } catch (finalError) {
-                    error(`[LANGUAGE_RESET] Final error restarting recognition: ${finalError}`);
-                  }
-                }
-              }, 500);
-            }
-          }
-          
-          // Clear language change status after a delay
-          setTimeout(() => {
-            setIsChangingLanguage(false);
-          }, 500);
-        }, 500);
-      }
-    }, 1000);
-    
-    return () => clearTimeout(timer);
-  }, [sourceLanguage]);
-
-  // Update the component mount/unmount effect
-  useEffect(() => {
-    // Log when the VRCTalk component is mounted
-    info('[VRCTALK] Component mounted');
-    info(`[VRCTALK] Global SR initialized: ${globalSRInitialized}, Global SR exists: ${!!globalSpeechRecognizer}`);
-    info(`[VRCTALK] Recognition active: ${recognitionActive}, SR status: ${sr ? sr.status() : 'no sr'}`);
-    
-    // If we need to initialize speech recognition on mount
-    if (sr && recognitionActive && !sr.status()) {
-      info('[VRCTALK] Starting speech recognition on component mount');
-      sr.start();
-    }
-    
-    return () => {
-      // Log when the VRCTalk component is unmounted (tab changed)
-      info('[VRCTALK] Component unmounting');
-      info(`[VRCTALK] SR status at unmount: ${sr ? sr.status() : 'no sr'}`);
-      
-      try {
-        // Only handle the speech recognizer if it exists
-        if (sr) {
-          // Store the current recognition state in a variable to restore it later
-          const wasRunning = sr.status();
-          info(`[VRCTALK] Recognition state at unmount: ${wasRunning ? 'running' : 'stopped'}`);
-          
-          // We want to preserve the global speech recognizer instance
-          // but pause it temporarily during tab switch to avoid issues
-          if (wasRunning) {
-            info('[VRCTALK] Pausing global speech recognizer during tab switch');
-            
-            // We'll use a flag in localStorage to track that we need to restart on return
-            localStorage.setItem('vrctalk_recognition_paused', 'true');
-            
-            // Temporarily stop the recognizer
-            sr.stop();
-            
-            // Schedule a restart after a short delay in case we return quickly
-            setTimeout(() => {
-              // Only restart if we're still on the settings page (not returned to main yet)
-              if (document.location.hash.includes('settings') && sr && !sr.status()) {
-                info('[VRCTALK] Restarting recognition after pause');
-                sr.start();
-              }
-            }, 2000);
-          }
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        error(`[VRCTALK] Error during component unmount: ${errorMessage}`);
-      }
-    };
-  }, []);
-
-  // Add an effect that runs when the component mounts to check if we need to restore recognition
-  useEffect(() => {
-    // Check if we need to restore recognition state
-    const needsRestore = localStorage.getItem('vrctalk_recognition_paused') === 'true';
-    
-    if (needsRestore && sr && recognitionActive && !sr.status()) {
-      info('[VRCTALK] Restoring speech recognition after tab switch');
-      localStorage.removeItem('vrctalk_recognition_paused');
-      
-      // Short delay to ensure component is fully mounted
-      setTimeout(() => {
-        if (sr && recognitionActive && !sr.status()) {
-          info('[VRCTALK] Starting speech recognition after restoration');
-          sr.restart(); // Use restart instead of start for a clean state
-        }
-      }, 500);
-    }
-  }, [sr, recognitionActive]);
-
   // UI component return
   return (
-    <div className="flex flex-col space-y-4">
-      {/* Header section with status indicators */}
-      <div className="card p-4 animate-slide-up">
-        <div className="flex flex-col md:flex-row justify-between items-center md:space-x-4 space-y-2 md:space-y-0">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800 mb-0.5">VRC Talk</h2>
-            <p className="text-gray-600 text-sm">Translating from <span className="font-medium">{langSource[findLangSourceIndex(sourceLanguage)].name}</span> to <span className="font-medium">{langTo[findLangToIndex(targetLanguage)].name}</span></p>
+    <div className="space-y-3">
+      {/* Status Header */}
+      <div className="modern-card animate-slide-up">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-3 lg:space-y-0">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-white">
+              Voice Translation
+            </h2>
+            <p className="text-sm text-white/70">
+              Translating from{' '}
+              <span className="font-semibold text-blue-300">
+                {langSource[findLangSourceIndex(sourceLanguage)]?.name || sourceLanguage}
+              </span>
+              {' '}to{' '}
+              <span className="font-semibold text-purple-300">
+                {langTo[findLangToIndex(targetLanguage)]?.name || targetLanguage}
+              </span>
+            </p>
           </div>
           
-          <div className="flex items-center space-x-4">
-            {/* Microphone status */}
-            <div className="flex items-center">
-              <div className={`w-2.5 h-2.5 rounded-full mr-2 ${recognitionActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
-              <span className="text-sm text-gray-700">{defaultMicrophone}</span>
+          {/* Status Indicators */}
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Microphone Status */}
+            <div className="flex items-center space-x-3 bg-white/5 rounded-xl px-4 py-2">
+              <div className="relative">
+                <div className={`status-dot ${recognitionActive ? 'status-active' : 'status-inactive'}`}></div>
+                {recognitionActive && detecting && (
+                  <div className="mic-pulse"></div>
+                )}
+              </div>
+              <div className="text-sm">
+                <div className="text-white font-medium">Microphone</div>
+                <div className="text-white/60">{defaultMicrophone}</div>
+              </div>
             </div>
             
-            {/* VRChat connection status */}
-            <div className="flex items-center">
-              <div className={`w-2.5 h-2.5 rounded-full mr-2 ${vrcMuted ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
-              <span className="text-sm text-gray-700">VRChat {vrcMuted ? 'Muted' : 'Connected'}</span>
+            {/* VRChat Status */}
+            <div className="flex items-center space-x-3 bg-white/5 rounded-xl px-4 py-2">
+              <div className={`status-dot ${vrcMuted ? 'status-warning' : 'status-active'}`}></div>
+              <div className="text-sm">
+                <div className="text-white font-medium">VRChat</div>
+                <div className="text-white/60">{vrcMuted ? 'Muted' : 'Connected'}</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Language Selection */}
-      <div className="card p-4 animate-slide-up animate-delay-100">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
-          <div>
-            <label htmlFor="sourceLanguage" className="label">Source Language</label>
+      <div className="modern-card animate-slide-up animate-delay-100">
+        <h3 className="text-lg font-semibold text-white mb-4">Language Settings</h3>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 relative">
+          {/* Source Language */}
+          <div className="space-y-3">
+            <label className="block text-xs font-medium text-white/80">
+              Source Language (Speech Input)
+            </label>
             <div className="relative">
               <select 
-                id="sourceLanguage" 
                 value={sourceLanguage}
                 onChange={handleSourceLanguageChange}
-                className="select-field appearance-none pr-10"
+                className="select-modern"
+                disabled={isChangingLanguage}
               >
                 {langSource.map((lang, index) => (
                   <option key={`source-${index}`} value={lang.code}>
@@ -838,35 +607,34 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
                   </option>
                 ))}
               </select>
-              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
             </div>
           </div>
           
-          {/* Swap languages button */}
-          <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 hidden md:block">
+          {/* Swap Button */}
+          <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 hidden lg:block">
             <button 
               onClick={swapLanguages}
-              className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 shadow-lg transition-all duration-200 hover:scale-110"
+              className="swap-button"
+              disabled={isChangingLanguage}
               title="Swap Languages"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
               </svg>
             </button>
           </div>
           
-          <div>
-            <label htmlFor="targetLanguage" className="label">Target Language</label>
+          {/* Target Language */}
+          <div className="space-y-3">
+            <label className="block text-xs font-medium text-white/80">
+              Target Language (Translation Output)
+            </label>
             <div className="relative">
               <select 
-                id="targetLanguage" 
                 value={targetLanguage}
                 onChange={handleTargetLanguageChange}
-                className="select-field appearance-none pr-10"
+                className="select-modern"
+                disabled={isChangingLanguage}
               >
                 {langTo.map((lang, index) => (
                   <option key={`target-${index}`} value={lang.code}>
@@ -874,123 +642,114 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
                   </option>
                 ))}
               </select>
-              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
             </div>
           </div>
           
-          {/* Mobile swap button */}
-          <div className="flex justify-center mt-2 md:hidden">
+          {/* Mobile Swap Button */}
+          <div className="flex justify-center lg:hidden">
             <button 
               onClick={swapLanguages}
-              className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 shadow-lg transition-all duration-200 hover:scale-110 flex items-center"
-              title="Swap Languages"
+              className="btn-modern flex items-center space-x-2"
+              disabled={isChangingLanguage}
             >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
               </svg>
-              Swap Languages
+              <span>Swap Languages</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Speech Recognition UI */}
-      <div className="card p-4 animate-slide-up animate-delay-200">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold text-gray-800">Speech Recognition</h3>
+      {/* Speech Recognition Control */}
+      <div className="modern-card animate-slide-up animate-delay-200">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-white">Speech Recognition</h3>
           <button 
             onClick={toggleRecognition} 
-            className={`flex items-center px-3 py-1.5 rounded-md font-medium transition-all duration-300 ${
+            className={`btn-modern flex items-center space-x-2 ${
               recognitionActive 
-                ? 'bg-red-500 hover:bg-red-600 text-white' 
-                : 'bg-green-500 hover:bg-green-600 text-white'
+                ? 'btn-danger' 
+                : 'btn-success'
             }`}
+            disabled={isChangingLanguage}
           >
             {recognitionActive ? (
               <>
-                <span className="relative mr-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <div className="relative">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
                   </svg>
                   {detecting && (
-                    <span className="absolute inset-0 rounded-full border-2 border-white animate-ping opacity-75"></span>
+                    <div className="absolute inset-0 rounded-full border-2 border-white animate-ping opacity-75"></div>
                   )}
-                </span>
-                Pause Recognition
+                </div>
+                <span>Pause Recognition</span>
               </>
             ) : (
               <>
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Start Recognition
+                <span>Start Recognition</span>
               </>
             )}
           </button>
         </div>
 
         {/* Source Text Display */}
-        <div className="mb-3">
-          <div className="flex items-center mb-1">
-            <h4 className="text-sm font-medium text-gray-700">Detected Speech</h4>
-            {detecting && (
-              <div className="ml-2 status-processing">
-                <div className="mr-1 h-1.5 w-1.5 rounded-full bg-yellow-500 animate-pulse"></div>
-                Listening
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-white">Detected Speech</h4>
+              <div className="flex items-center space-x-2">
+                {detecting && (
+                  <div className="flex items-center space-x-2 text-sm text-yellow-300">
+                    <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
+                    <span>Listening...</span>
+                  </div>
+                )}
+                {isChangingLanguage && (
+                  <div className="flex items-center space-x-2 text-sm text-blue-300">
+                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
+                    <span>Changing Language...</span>
+                  </div>
+                )}
               </div>
-            )}
-            {isChangingLanguage && (
-              <div className="ml-2 status-processing">
-                <div className="mr-1 h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></div>
-                Changing Language
-              </div>
-            )}
-          </div>
-          <div className={`text-display relative overflow-hidden ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
-            <div key={sourceText} className={`transition-all duration-300 ${sourceText ? 'animate-slide-up' : ''}`}>
-              {sourceText || (
-                <span className="text-gray-400 italic">
-                  {isChangingLanguage ? 'Changing language...' : 'Waiting for speech...'}
-                </span>
-              )}
             </div>
-            {detecting && (
-              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-blue-500 to-green-400 shimmer"></div>
-            )}
-            {isChangingLanguage && (
-              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-purple-500 to-blue-400 shimmer"></div>
-            )}
+            <div className={`text-display-modern ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
+              <div className="text-white text-sm leading-relaxed">
+                {sourceText || (
+                  <span className="text-white/50 italic">
+                    {isChangingLanguage ? 'Changing language...' : 'Waiting for speech...'}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Translated Text Display */}
-        <div>
-          <div className="flex items-center mb-1">
-            <h4 className="text-sm font-medium text-gray-700">Translated Text</h4>
-            {translating && (
-              <div className="ml-2 status-processing">
-                <div className="mr-1 h-1.5 w-1.5 rounded-full bg-yellow-500 animate-pulse"></div>
-                Translating
-              </div>
-            )}
-          </div>
-          <div className={`text-display relative overflow-hidden ${translating ? 'text-display-active' : ''}`}>
-            <div key={translatedText} className={`transition-all duration-500 ${translatedText ? 'animate-slide-up' : ''}`}>
-              {translatedText || (
-                <span className="text-gray-400 italic">
-                  {isChangingLanguage ? 'Changing language...' : 'Translation will appear here...'}
-                </span>
+          {/* Translated Text Display */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-white">Translation</h4>
+              {translating && (
+                <div className="flex items-center space-x-2 text-sm text-purple-300">
+                  <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
+                  <span>Translating...</span>
+                </div>
               )}
             </div>
-            {translating && (
-              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-purple-500 to-blue-400 shimmer"></div>
-            )}
+            <div className={`text-display-modern ${translating ? 'text-display-active' : ''}`}>
+              <div className="text-white text-sm leading-relaxed">
+                {translatedText || (
+                  <span className="text-white/50 italic">
+                    {isChangingLanguage ? 'Changing language...' : 'Translation will appear here...'}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -998,4 +757,4 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   );
 };
 
-export default VRCTalk; 
+export default VRCTalk;

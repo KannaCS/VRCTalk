@@ -40,23 +40,60 @@ const App: React.FC = () => {
 
   if (loading || !config) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-blue-900 to-purple-900 text-white">
-        <div className="text-center p-8 rounded-lg backdrop-blur-sm bg-black/20 border border-white/10 shadow-xl">
-          <div className="flex justify-center mb-6">
-            <div className="relative">
-              <svg className="w-16 h-16 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-              </svg>
-              <div className="absolute inset-0 rounded-full border-2 border-blue-400 animate-ping opacity-75"></div>
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold mb-2 animate-pulse">Loading VRCTalk...</h2>
-          <p className="text-white/80">Please wait while the application initializes</p>
+      <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
+        {/* Animated Background */}
+        <div className="absolute inset-0 bg-slate-900">
+          <div className="absolute inset-0 opacity-20" style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
+          }}></div>
           
-          <div className="mt-6 flex justify-center space-x-2">
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "0ms" }}></div>
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "150ms" }}></div>
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "300ms" }}></div>
+          {/* Floating Orbs */}
+          <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-blue-500/20 rounded-full blur-xl animate-float"></div>
+          <div className="absolute top-3/4 right-1/4 w-24 h-24 bg-purple-500/20 rounded-full blur-xl animate-float animate-delay-300"></div>
+          <div className="absolute bottom-1/4 left-1/3 w-20 h-20 bg-pink-500/20 rounded-full blur-xl animate-float animate-delay-500"></div>
+        </div>
+
+        {/* Loading Content */}
+        <div className="relative z-10 text-center">
+          <div className="modern-card animate-scale-in max-w-md mx-auto">
+            {/* Logo Animation */}
+            <div className="flex justify-center mb-8">
+              <div className="relative">
+                <div className="w-20 h-20 rounded-2xl bg-blue-600 flex items-center justify-center animate-pulse-soft">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                  </svg>
+                </div>
+                
+                {/* Pulsing Rings */}
+                <div className="absolute inset-0 rounded-2xl border-2 border-blue-400/50 animate-ping"></div>
+                <div className="absolute inset-0 rounded-2xl border-2 border-purple-400/30 animate-ping animate-delay-200"></div>
+              </div>
+            </div>
+
+            {/* Loading Text */}
+            <div className="space-y-4">
+              <h2 className="text-3xl font-bold text-white animate-slide-up">
+                VRC<span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Talk</span>
+              </h2>
+              <p className="text-white/80 animate-slide-up animate-delay-100">
+                Initializing voice translation system...
+              </p>
+              
+              {/* Loading Progress */}
+              <div className="mt-8 animate-slide-up animate-delay-200">
+                <div className="progress-bar">
+                  <div className="progress-fill w-full"></div>
+                </div>
+              </div>
+
+              {/* Loading Dots */}
+              <div className="flex justify-center space-x-2 mt-6 animate-slide-up animate-delay-300">
+                <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"></div>
+                <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce animate-delay-100"></div>
+                <div className="w-2 h-2 rounded-full bg-pink-400 animate-bounce animate-delay-200"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -64,55 +101,94 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-900 via-blue-900 to-purple-900 overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Dynamic Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+        <div className="absolute inset-0 opacity-30" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
+        }}></div>
+        
+        {/* Animated Background Elements */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute top-1/2 right-1/4 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl animate-float animate-delay-300"></div>
+          <div className="absolute bottom-1/4 left-1/2 w-32 h-32 bg-pink-500/10 rounded-full blur-3xl animate-float animate-delay-500"></div>
+        </div>
+      </div>
+
       {/* Header */}
-      <header className="py-2 bg-navy-900 bg-opacity-90 shadow-lg border-b border-white/10 flex-shrink-0">
-        <div className="flex justify-center items-center">
-          <div className="flex flex-row items-center justify-center gap-2">
-            <h1 className="text-xl font-bold text-white flex items-center">
-              VRC<span className="text-blue-400">Talk</span>
-              <span className="ml-1.5 px-1.5 py-0.5 bg-blue-600 text-xs text-white font-medium rounded">v0.1.3</span>
-            </h1>
-            <button 
-              onClick={handleSettingsToggle}
-              className="px-3 py-1 rounded-md font-medium transition-all duration-300 text-sm bg-white/10 text-white/80 hover:bg-white/20"
-            >
-              Settings
-            </button>
+      <header className="relative z-10 app-header py-2">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex justify-between items-center">
+            {/* Logo and Title */}
+            <div className="flex items-center space-x-4 animate-slide-down">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">
+                  VRC<span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Talk</span>
+                </h1>
+                <p className="text-white/60 text-xs">Voice Translation for VRChat</p>
+              </div>
+            </div>
+
+            {/* Version and Settings */}
+            <div className="flex items-center space-x-4 animate-slide-down animate-delay-100">
+              <span className="px-3 py-1 bg-white/10 text-white/80 text-xs font-medium rounded-full backdrop-blur-sm">
+                v0.2.1
+              </span>
+              <button 
+                onClick={handleSettingsToggle}
+                className="btn-modern flex items-center space-x-2 text-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <span>Settings</span>
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 flex justify-center overflow-y-auto py-4">
-        <div className="w-full max-w-2xl px-4 animate-fade-in">
-          <div className="transition-all duration-300 transform">
-            <div className="animate-slide-up">
-              <VRCTalk config={config} setConfig={setConfig} />
-            </div>
+      {/* Main Content */}
+      <main className="relative z-10 flex-1 px-3 py-2 sm:px-4 sm:py-3 lg:px-6 lg:py-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="animate-fade-in">
+            <VRCTalk config={config} setConfig={setConfig} />
           </div>
         </div>
       </main>
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+        <div className="modal-backdrop animate-fade-in" onClick={handleSettingsToggle}>
           <div 
-            className="bg-gray-900 w-11/12 max-w-2xl max-h-[90vh] rounded-lg shadow-2xl border border-white/10 overflow-hidden animate-scale-in"
+            className="modal-content animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center border-b border-gray-700 px-4 py-3">
-              <h2 className="text-lg font-semibold text-white">Settings</h2>
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-4 border-b border-white/10">
+              <div>
+                <h2 className="text-xl font-bold text-white">Settings</h2>
+                <p className="text-white/60 text-sm mt-1">Configure your VRCTalk experience</p>
+              </div>
               <button 
                 onClick={handleSettingsToggle}
-                className="text-gray-400 hover:text-white transition-colors"
+                className="p-2 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all duration-300"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
               </button>
             </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(90vh-64px)]">
+
+            {/* Modal Content */}
+            <div className="p-4 overflow-y-auto max-h-[calc(90vh-100px)]">
               <Settings 
                 config={config} 
                 setConfig={setConfig} 
@@ -126,4 +202,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; 
+export default App;

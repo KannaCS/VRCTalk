@@ -534,220 +534,180 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     }, 300);
   };
 
-  // UI component return
+  // UI component return (new grid layout for compact, no-scroll design)
   return (
-    <div className="space-y-3">
-      {/* Status Header */}
-      <div className="modern-card animate-slide-up">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-3 lg:space-y-0">
+    <div className="grid gap-3 lg:grid-cols-3">
+      {/* COLUMN 1 – controls */}
+      <div className="flex flex-col gap-3">
+        {/* Status Header */}
+        <div className="modern-card animate-slide-up">
           <div className="space-y-1">
-            <h2 className="text-lg font-bold text-white">
+            <h2 className="text-lg font-bold text-white flex items-center gap-1">
               Voice Translation
             </h2>
-            <p className="text-sm text-white/70">
-              Translating from{' '}
+            <p className="text-xs text-white/70">
               <span className="font-semibold text-blue-300">
                 {langSource[findLangSourceIndex(sourceLanguage)]?.name || sourceLanguage}
               </span>
-              {' '}to{' '}
+              {' → '}
               <span className="font-semibold text-purple-300">
                 {langTo[findLangToIndex(targetLanguage)]?.name || targetLanguage}
               </span>
             </p>
           </div>
-          
+
           {/* Status Indicators */}
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             {/* Microphone Status */}
-            <div className="flex items-center space-x-3 bg-white/5 rounded-xl px-4 py-2">
+            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-3 py-1.5">
               <div className="relative">
                 <div className={`status-dot ${recognitionActive ? 'status-active' : 'status-inactive'}`}></div>
-                {recognitionActive && detecting && (
-                  <div className="mic-pulse"></div>
-                )}
+                {recognitionActive && detecting && <div className="mic-pulse" />}
               </div>
-              <div className="text-sm">
-                <div className="text-white font-medium">Microphone</div>
-                <div className="text-white/60">{defaultMicrophone}</div>
-              </div>
+              <span className="text-xs text-white/70 truncate max-w-[120px]" title={defaultMicrophone}>{defaultMicrophone}</span>
             </div>
-            
+
             {/* VRChat Status */}
-            <div className="flex items-center space-x-3 bg-white/5 rounded-xl px-4 py-2">
+            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-3 py-1.5">
               <div className={`status-dot ${vrcMuted ? 'status-warning' : 'status-active'}`}></div>
-              <div className="text-sm">
-                <div className="text-white font-medium">VRChat</div>
-                <div className="text-white/60">{vrcMuted ? 'Muted' : 'Connected'}</div>
-              </div>
+              <span className="text-xs text-white/70">{vrcMuted ? 'Muted' : 'Connected'}</span>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Language Selection */}
-      <div className="modern-card animate-slide-up animate-delay-100">
-        <h3 className="text-lg font-semibold text-white mb-4">Language Settings</h3>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 relative">
-          {/* Source Language */}
-          <div className="space-y-3">
-            <label className="block text-xs font-medium text-white/80">
-              Source Language (Speech Input)
-            </label>
-            <div className="relative">
-              <select 
+        {/* Language Selection */}
+        <div className="modern-card animate-slide-up animate-delay-100">
+          <h3 className="text-sm font-semibold text-white mb-3">Languages</h3>
+
+          <div className="grid grid-cols-2 gap-2 items-end">
+            <div>
+              <label className="block text-[10px] font-medium text-white/60 mb-1">Source</label>
+              <select
                 value={sourceLanguage}
                 onChange={handleSourceLanguageChange}
-                className="select-modern"
+                className="select-modern text-xs"
                 disabled={isChangingLanguage}
               >
                 {langSource.map((lang, index) => (
-                  <option key={`source-${index}`} value={lang.code}>
-                    {lang.name}
-                  </option>
+                  <option key={`source-${index}`} value={lang.code}>{lang.name}</option>
                 ))}
               </select>
             </div>
-          </div>
-          
-          {/* Swap Button */}
-          <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 hidden lg:block">
-            <button 
-              onClick={swapLanguages}
-              className="swap-button"
-              disabled={isChangingLanguage}
-              title="Swap Languages"
-            >
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-              </svg>
-            </button>
-          </div>
-          
-          {/* Target Language */}
-          <div className="space-y-3">
-            <label className="block text-xs font-medium text-white/80">
-              Target Language (Translation Output)
-            </label>
-            <div className="relative">
-              <select 
+
+            <div>
+              <label className="block text-[10px] font-medium text-white/60 mb-1">Target</label>
+              <select
                 value={targetLanguage}
                 onChange={handleTargetLanguageChange}
-                className="select-modern"
+                className="select-modern text-xs"
                 disabled={isChangingLanguage}
               >
                 {langTo.map((lang, index) => (
-                  <option key={`target-${index}`} value={lang.code}>
-                    {lang.name}
-                  </option>
+                  <option key={`target-${index}`} value={lang.code}>{lang.name}</option>
                 ))}
               </select>
             </div>
+
+            {/* Swap Button spans full width */}
+            <div className="col-span-2 flex justify-center">
+              <button
+                onClick={swapLanguages}
+                className="swap-button h-10 w-10 lg:h-12 lg:w-12"
+                disabled={isChangingLanguage}
+                title="Swap Languages"
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+              </button>
+            </div>
           </div>
-          
-          {/* Mobile Swap Button */}
-          <div className="flex justify-center lg:hidden">
-            <button 
-              onClick={swapLanguages}
-              className="btn-modern flex items-center space-x-2"
+        </div>
+
+        {/* Recognition Control */}
+        <div className="modern-card animate-slide-up animate-delay-200 flex flex-col">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold text-white">Recognition</h3>
+            <button
+              onClick={toggleRecognition}
+              className={`btn-modern flex items-center space-x-1 text-xs ${recognitionActive ? 'btn-danger' : 'btn-success'}`}
               disabled={isChangingLanguage}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-              </svg>
-              <span>Swap Languages</span>
+              {recognitionActive ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                  </svg>
+                  <span>Pause</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Start</span>
+                </>
+              )}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Speech Recognition Control */}
-      <div className="modern-card animate-slide-up animate-delay-200">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-white">Speech Recognition</h3>
-          <button 
-            onClick={toggleRecognition} 
-            className={`btn-modern flex items-center space-x-2 ${
-              recognitionActive 
-                ? 'btn-danger' 
-                : 'btn-success'
-            }`}
-            disabled={isChangingLanguage}
-          >
-            {recognitionActive ? (
-              <>
-                <div className="relative">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                  </svg>
+      {/* COLUMN 2-3 – speech & translation display */}
+      <div className="lg:col-span-2 flex flex-col gap-3">
+        <div className="modern-card animate-slide-up lg:h-full flex flex-col">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 overflow-hidden">
+            {/* Detected Speech */}
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="text-sm font-medium text-white">Detected</h4>
+                <div className="flex items-center space-x-1">
                   {detecting && (
-                    <div className="absolute inset-0 rounded-full border-2 border-white animate-ping opacity-75"></div>
+                    <div className="flex items-center space-x-1 text-[10px] text-yellow-300">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                      <span>Listening</span>
+                    </div>
+                  )}
+                  {isChangingLanguage && (
+                    <div className="flex items-center space-x-1 text-[10px] text-blue-300">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      <span>Updating</span>
+                    </div>
                   )}
                 </div>
-                <span>Pause Recognition</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Start Recognition</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Source Text Display */}
-        <div className="space-y-3">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-white">Detected Speech</h4>
-              <div className="flex items-center space-x-2">
-                {detecting && (
-                  <div className="flex items-center space-x-2 text-sm text-yellow-300">
-                    <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
-                    <span>Listening...</span>
-                  </div>
-                )}
-                {isChangingLanguage && (
-                  <div className="flex items-center space-x-2 text-sm text-blue-300">
-                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
-                    <span>Changing Language...</span>
-                  </div>
-                )}
               </div>
-            </div>
-            <div className={`text-display-modern ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
-              <div className="text-white text-sm leading-relaxed">
-                {sourceText || (
-                  <span className="text-white/50 italic">
-                    {isChangingLanguage ? 'Changing language...' : 'Waiting for speech...'}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Translated Text Display */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-white">Translation</h4>
-              {translating && (
-                <div className="flex items-center space-x-2 text-sm text-purple-300">
-                  <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
-                  <span>Translating...</span>
+              <div className={`text-display-modern flex-1 ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
+                <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
+                  {sourceText || (
+                    <span className="text-white/50 italic">
+                      {isChangingLanguage ? 'Changing language…' : 'Waiting…'}
+                    </span>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-            <div className={`text-display-modern ${translating ? 'text-display-active' : ''}`}>
-              <div className="text-white text-sm leading-relaxed">
-                {translatedText || (
-                  <span className="text-white/50 italic">
-                    {isChangingLanguage ? 'Changing language...' : 'Translation will appear here...'}
-                  </span>
+
+            {/* Translation */}
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="text-sm font-medium text-white">Translation</h4>
+                {translating && (
+                  <div className="flex items-center space-x-1 text-[10px] text-purple-300">
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                    <span>Working</span>
+                  </div>
                 )}
+              </div>
+              <div className={`text-display-modern flex-1 ${translating ? 'text-display-active' : ''}`}>
+                <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
+                  {translatedText || (
+                    <span className="text-white/50 italic">
+                      {isChangingLanguage ? 'Changing language…' : 'Translation will appear…'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

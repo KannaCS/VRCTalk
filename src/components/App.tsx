@@ -42,7 +42,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
         {/* Animated Background */}
-        <div className="absolute inset-0 bg-slate-900">
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-indigo-900 to-indigo-800">
           <div className="absolute inset-0 opacity-20" style={{
             backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
           }}></div>
@@ -74,7 +74,7 @@ const App: React.FC = () => {
             {/* Loading Text */}
             <div className="space-y-4">
               <h2 className="text-3xl font-bold text-white animate-slide-up">
-                VRC<span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Talk</span>
+                VRC<span style={{color:'var(--secondary-color)'}}>Talk</span>
               </h2>
               <p className="text-white/80 animate-slide-up animate-delay-100">
                 Initializing voice translation system...
@@ -103,7 +103,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen relative overflow-hidden">
       {/* Dynamic Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-indigo-900 to-indigo-800">
         <div className="absolute inset-0 opacity-30" style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
         }}></div>
@@ -122,14 +122,14 @@ const App: React.FC = () => {
           <div className="flex justify-between items-center">
             {/* Logo and Title */}
             <div className="flex items-center space-x-4 animate-slide-down">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{background:'var(--primary-color)'}}>
                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
                 </svg>
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">
-                  VRC<span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Talk</span>
+                  VRC<span style={{color:'var(--secondary-color)'}}>Talk</span>
                 </h1>
                 <p className="text-white/60 text-xs">Voice Translation for VRChat</p>
               </div>
@@ -138,7 +138,7 @@ const App: React.FC = () => {
             {/* Version and Settings */}
             <div className="flex items-center space-x-4 animate-slide-down animate-delay-100">
               <span className="px-3 py-1 bg-white/10 text-white/80 text-xs font-medium rounded-full backdrop-blur-sm">
-                v0.2.1
+                v0.2.2
               </span>
               <button 
                 onClick={handleSettingsToggle}

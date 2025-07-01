@@ -1,6 +1,6 @@
 [package]
 name = "vrctalk"
-version = "0.2.0"
+version = "0.2.2"
 description = "VRCTalk - Voice to Text Translation for VRChat"
 authors = ["you"]
 edition = "2021"

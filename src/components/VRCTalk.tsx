@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { info, error } from '@tauri-apps/plugin-log';
@@ -12,6 +12,7 @@ import { calculateMinWaitTime, langSource, langTo, findLangSourceIndex, findLang
 interface VRCTalkProps {
   config: Config;
   setConfig: React.Dispatch<React.SetStateAction<Config | null>>;
+  onNewMessage?: (sourceText: string, translatedText: string) => void;
 }
 
 // Global variables for detection queue and lock
@@ -22,7 +23,7 @@ let lock = false;
 let globalSpeechRecognizer: Recognizer | null = null;
 let globalSRInitialized = false;
 
-const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
+const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) => {
   const [detecting, setDetecting] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [recognitionActive, setRecognitionActive] = useState(true);
@@ -37,9 +38,18 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
   const [sourceLanguage, setSourceLanguage] = useState(config.source_language);
   const [targetLanguage, setTargetLanguage] = useState(config.target_language);
   const [isChangingLanguage, setIsChangingLanguage] = useState(false);
+  const [typedText, setTypedText] = useState("");
 
   // Use global speech recognizer to prevent multiple instances
   const [sr, setSr] = useState<Recognizer | null>(globalSpeechRecognizer);
+  
+  // Ref to keep track of recognitionActive state inside event listeners
+  const recognitionActiveRef = useRef(recognitionActive);
+
+  // Keep the ref updated whenever recognitionActive changes
+  useEffect(() => {
+    recognitionActiveRef.current = recognitionActive;
+  }, [recognitionActive]);
   
   // Update config when language selections change
   useEffect(() => {
@@ -152,10 +162,14 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
           setTranslating(true);
           
           // Get translation
-          const translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
-          info("[TRANSLATION] Translation succeeded!");
+          let translatedResult = "";
+          if (config.mode === 0) {
+            // Translation mode
+            translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
+            info("[TRANSLATION] Translation succeeded!");
+          }
           
-          // Apply gender changes if needed
+          // Apply gender changes if needed (only in translation mode)
           let finalTranslation = translatedResult;
           if (config.language_settings.gender_change && targetLanguage === "en") {
             info("[TRANSLATION] Applying gender changes...");
@@ -179,7 +193,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             }
           }
           
-          setTranslatedText(finalTranslation);
+          if (config.mode === 0) {
+            setTranslatedText(finalTranslation);
+          } else {
+            setTranslatedText("");
+          }
           setTranslating(false);
           
           // Send to VRChat
@@ -188,17 +206,21 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             ? text.replace(/？/g, "") 
             : text;
             
-          // Build message with tags at ends e.g., [EN] text | translation [JP]
-          const divider = ' | ';
-          const srcTag = `[${sourceLanguage.split('-')[0].toUpperCase()}]`;
-          const tgtTag = `[${targetLanguage.split('-')[0].toUpperCase()}]`;
+          let messageFormat = originalText; // default for transcription
 
-          let messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
+          if (config.mode === 0) {
+            // Build translation message
+            const divider = ' | ';
+            const srcTag = `[${getLangTag(sourceLanguage)}]`;
+            const tgtTag = `[${getLangTag(targetLanguage)}]`;
 
-          if (config.vrchat_settings.only_translation) {
-            messageFormat = `${finalTranslation} ${tgtTag}`;
-          } else if (config.vrchat_settings.translation_first) {
-            messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
+            messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
+
+            if (config.vrchat_settings.only_translation) {
+              messageFormat = `${finalTranslation} ${tgtTag}`;
+            } else if (config.vrchat_settings.translation_first) {
+              messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
+            }
           }
           
           try {
@@ -207,6 +229,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
               port: `${config.vrchat_settings.osc_port}`,
               msg: messageFormat
             });
+            
+            // Push to history callback
+            if (onNewMessage) {
+              onNewMessage(originalText, finalTranslation);
+            }
             
             // Wait for chatbox to process
             await new Promise(r => setTimeout(r, calculateMinWaitTime(
@@ -384,10 +411,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
       setSourceText(result);
       setDetecting(!isFinal);
 
-      // When we get a final transcript, queue it for translation (in translation mode)
-      if (isFinal && config.mode === 0) {
+      // When we get a final transcript, queue it for processing
+      if (isFinal) {
         detectionQueue.push(result);
-        // Force the translation processing loop to run ASAP
+        // Force the processing loop to run ASAP
         setTriggerUpdate(prev => !prev);
       }
     });
@@ -534,6 +561,69 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
     }, 300);
   };
 
+  // -------------------------------------------------------------
+  // Network connectivity handling
+  // -------------------------------------------------------------
+  useEffect(() => {
+    // Handler for regaining internet connection
+    const handleOnline = () => {
+      info('[NETWORK] Connection restored (online event)');
+      if (globalSpeechRecognizer && recognitionActiveRef.current) {
+        // Restart the recognizer only if it is not currently running
+        if (!globalSpeechRecognizer.status()) {
+          info('[NETWORK] Restarting speech recognition after reconnection');
+          try {
+            globalSpeechRecognizer.restart();
+          } catch (e) {
+            error(`[NETWORK] Error restarting recognizer after reconnect: ${e}`);
+          }
+        }
+      }
+    };
+
+    // Handler for losing internet connection
+    const handleOffline = () => {
+      info('[NETWORK] Connection lost (offline event)');
+      if (globalSpeechRecognizer && globalSpeechRecognizer.status()) {
+        try {
+          info('[NETWORK] Stopping speech recognition due to connection loss');
+          globalSpeechRecognizer.stop();
+        } catch (e) {
+          error(`[NETWORK] Error stopping recognizer on connection loss: ${e}`);
+        }
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Helper to map language code to display tag
+  const getLangTag = (langCode: string): string => {
+    const base = langCode.split('-')[0].toLowerCase();
+    if (base === 'ja') return 'JP'; // Override Japanese tag from JA to JP
+    return base.toUpperCase();
+  };
+
+  // Handle manual text submission
+  const handleManualSubmit = async () => {
+    const text = typedText.trim();
+    if (text.length === 0) return;
+
+    // Clear input immediately for better UX
+    setTypedText("");
+
+    // Push to translation queue (consistent with speech flow)
+    detectionQueue.push(text);
+    setTriggerUpdate(prev => !prev);
+  };
+
   // UI component return (new grid layout for compact, no-scroll design)
   return (
     <div className="grid gap-3 lg:grid-cols-3">
@@ -653,12 +743,40 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
             </button>
           </div>
         </div>
+
+        {/* Manual Input */}
+        <div className="modern-card animate-slide-up animate-delay-300 flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-white">Manual Input</h3>
+          <div className="flex items-center space-x-2">
+            <input
+              type="text"
+              className="flex-1 text-xs bg-white/5 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/40"
+              placeholder="Type and press Enter…"
+              value={typedText}
+              onChange={e => setTypedText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleManualSubmit();
+                }
+              }}
+              disabled={isChangingLanguage}
+            />
+            <button
+              onClick={handleManualSubmit}
+              className="btn-modern btn-primary text-xs px-3 py-1.5"
+              disabled={typedText.trim().length === 0 || isChangingLanguage}
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* COLUMN 2-3 – speech & translation display */}
       <div className="lg:col-span-2 flex flex-col gap-3">
         <div className="modern-card animate-slide-up lg:h-full flex flex-col">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 overflow-hidden">
+          <div className={`grid grid-cols-1 ${config.mode === 0 ? 'md:grid-cols-2' : ''} gap-3 flex-1 overflow-hidden`}>
             {/* Detected Speech */}
             <div className="flex flex-col">
               <div className="flex items-center justify-between mb-1">
@@ -689,27 +807,29 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig }) => {
               </div>
             </div>
 
-            {/* Translation */}
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-sm font-medium text-white">Translation</h4>
-                {translating && (
-                  <div className="flex items-center space-x-1 text-[10px] text-purple-300">
-                    <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-                    <span>Working</span>
-                  </div>
-                )}
-              </div>
-              <div className={`text-display-modern flex-1 ${translating ? 'text-display-active' : ''}`}>
-                <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
-                  {translatedText || (
-                    <span className="text-white/50 italic">
-                      {isChangingLanguage ? 'Changing language…' : 'Translation will appear…'}
-                    </span>
+            {/* Translation - only in translation mode */}
+            {config.mode === 0 && (
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-sm font-medium text-white">Translation</h4>
+                  {translating && (
+                    <div className="flex items-center space-x-1 text-[10px] text-purple-300">
+                      <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                      <span>Working</span>
+                    </div>
                   )}
                 </div>
+                <div className={`text-display-modern flex-1 ${translating ? 'text-display-active' : ''}`}>                
+                  <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
+                    {translatedText || (
+                      <span className="text-white/50 italic">
+                        {isChangingLanguage ? 'Changing language…' : 'Translation will appear…'}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

@@ -4,10 +4,15 @@ import VRCTalk from './VRCTalk';
 import Settings from './Settings';
 import { info, error } from '@tauri-apps/plugin-log';
 
+// Message record type for history
+type MessageItem = { src: string; tgt: string; time: number };
+
 const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<MessageItem[]>([]);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
 
   useEffect(() => {
     const initConfig = async () => {
@@ -36,6 +41,16 @@ const App: React.FC = () => {
       const errorMessage = err instanceof Error ? err.message : String(err);
       error(`[APP] Error toggling settings dialog: ${errorMessage}`);
     }
+  };
+
+  // Handle history toggle
+  const handleHistoryToggle = () => {
+    setShowHistory(!showHistory);
+  };
+
+  // Callback from VRCTalk to add message to history
+  const handleNewMessage = (src: string, tgt: string) => {
+    setHistory(prev => [{ src, tgt, time: Date.now() }, ...prev].slice(0, 200));
   };
 
   if (loading || !config) {
@@ -135,11 +150,23 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Version and Settings */}
+            {/* Version, History, Settings */}
             <div className="flex items-center space-x-4 animate-slide-down animate-delay-100">
               <span className="px-3 py-1 bg-white/10 text-white/80 text-xs font-medium rounded-full backdrop-blur-sm">
                 v0.2.2
               </span>
+
+              {/* History Button */}
+              <button 
+                onClick={handleHistoryToggle}
+                className="btn-modern flex items-center space-x-2 text-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3"></path>
+                  <circle cx="12" cy="12" r="10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span>History</span>
+              </button>
               <button 
                 onClick={handleSettingsToggle}
                 className="btn-modern flex items-center space-x-2 text-sm"
@@ -159,7 +186,7 @@ const App: React.FC = () => {
       <main className="relative z-10 flex-1 px-3 py-2 sm:px-4 sm:py-3 lg:px-6 lg:py-4">
         <div className="max-w-4xl mx-auto">
           <div className="animate-fade-in">
-            <VRCTalk config={config} setConfig={setConfig} />
+            <VRCTalk config={config} setConfig={setConfig} onNewMessage={handleNewMessage} />
           </div>
         </div>
       </main>
@@ -194,6 +221,44 @@ const App: React.FC = () => {
                 setConfig={setConfig} 
                 onClose={handleSettingsToggle} 
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="modal-backdrop animate-fade-in" onClick={handleHistoryToggle}>
+          <div 
+            className="modal-content animate-scale-in max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-4 border-b border-white/10">
+              <h2 className="text-xl font-bold text-white">Message History</h2>
+              <button 
+                onClick={handleHistoryToggle}
+                className="p-2 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all duration-300"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4 overflow-y-auto max-h-[70vh] space-y-3">
+              {history.length === 0 ? (
+                <p className="text-white/70 text-sm">No messages yet.</p>
+              ) : (
+                history.map((item, idx) => (
+                  <div key={idx} className="bg-white/5 p-3 rounded-lg">
+                    <p className="text-xs text-blue-300 mb-1">{new Date(item.time).toLocaleTimeString()}</p>
+                    <p className="text-sm text-white break-words"><span className="font-semibold">Src:</span> {item.src}</p>
+                    <p className="text-sm text-purple-200 break-words mt-1"><span className="font-semibold">Tgt:</span> {item.tgt}</p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

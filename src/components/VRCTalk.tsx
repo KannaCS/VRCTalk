@@ -63,7 +63,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       target_language: targetLanguage
     };
     setConfig(newConfig);
-    saveConfig(newConfig);
+    
+    // Save config asynchronously with error handling
+    saveConfig(newConfig).catch(e => {
+      error(`[LANGUAGE] Error saving config after language change: ${e}`);
+    });
     
     // Log language change details
     info(`[LANGUAGE] Language change detected: source=${prevSourceLang}->${sourceLanguage}, target=${prevTargetLang}->${targetLanguage}`);
@@ -83,18 +87,24 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         detectionQueue = [];
         
         // Apply the language change to the recognizer with a slight delay to let UI update
-        setTimeout(() => {
+        const timeout1 = setTimeout(() => {
           if (sr) {
             sr.set_lang(sourceLanguage);
             
             // Add small delay before allowing new detections to ensure complete transition
-            setTimeout(() => {
+            const timeout2 = setTimeout(() => {
               // Force trigger a state update to refresh detection state
-              setTriggerUpdate(!triggerUpdate);
+              setTriggerUpdate(prev => !prev);
               setIsChangingLanguage(false);
             }, 1000);
+            
+            // Store timeout for cleanup
+            return () => clearTimeout(timeout2);
           }
         }, 200);
+        
+        // Store timeout for cleanup
+        return () => clearTimeout(timeout1);
       }
       // If only target language changed (not source), we don't need to restart recognition
       else if (prevTargetLang !== targetLanguage) {
@@ -120,22 +130,40 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       // If the app should be muted, stop recognition
       if (shouldBeMuted) {
         info("[SR] Pausing recognition because VRChat is muted");
-        sr.stop();
-      } 
+        try {
+          sr.stop();
+        } catch (e) {
+          error(`[SR] Error stopping recognition due to mute: ${e}`);
+        }
+      }
       // Otherwise, ensure recognition is running if it's not already
       else if (!sr.status()) {
         info("[SR] Starting/resuming recognition");
-        sr.start();
+        try {
+          sr.start();
+        } catch (e) {
+          error(`[SR] Error starting/resuming recognition: ${e}`);
+        }
       }
     } else {
       info("[SR] Stopping recognition by user request");
-      sr.stop();
+      try {
+        sr.stop();
+      } catch (e) {
+        error(`[SR] Error stopping recognition by user request: ${e}`);
+      }
     }
   }, [recognitionActive, vrcMuted, config.vrchat_settings.disable_when_muted, sr]);
   
   // Translation processing loop
   useEffect(() => {
     const processTranslation = async () => {
+      // If we are offline, wait until connection is restored to avoid useless fetches
+      if (!navigator.onLine) {
+        info("[TRANSLATION] Skipping translation because network is offline");
+        // Don't lock the queue when offline - just skip processing
+        return;
+      }
       if (detectionQueue.length === 0 || lock) return;
       
       const text = detectionQueue[0].replace(/%/g, "%25");
@@ -146,9 +174,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       
       // Send typing indicator to VRChat
       try {
-        await invoke("send_typing", { 
-          address: config.vrchat_settings.osc_address, 
-          port: `${config.vrchat_settings.osc_port}` 
+        await invoke("send_typing", {
+          address: config.vrchat_settings.osc_address,
+          port: `${config.vrchat_settings.osc_port}`
         });
       } catch (e) {
         error(`[TRANSLATION] Error sending typing status: ${e}`);
@@ -249,6 +277,15 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         } catch (e) {
           error(`[TRANSLATION] Error during translation: ${e}`);
           attempts--;
+          
+          // Always reset translating state on error
+          setTranslating(false);
+          
+          // If we're out of attempts, still need to unlock
+          if (attempts <= 0) {
+            lock = false;
+            return;
+          }
         }
         
         if (attempts <= 0) break;
@@ -257,14 +294,22 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       lock = false;
     };
     
+    // Create an abort controller for cleanup
+    const abortController = new AbortController();
+    
     processTranslation();
     
     // Trigger periodic updates to check the queue
     const timer = setTimeout(() => {
-      setTriggerUpdate(!triggerUpdate);
+      if (!abortController.signal.aborted) {
+        setTriggerUpdate(prev => !prev);
+      }
     }, 100);
     
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
   }, [triggerUpdate]);
   
   // Initialize speech recognition and VRC mute listener
@@ -309,17 +354,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       info(`[OSC] Received VRChat mute status: ${event.payload}`);
       setVRCMuted(event.payload);
 
-      // Explicitly handle unmute events when disable_when_muted is active
-      if (sr && !event.payload && config.vrchat_settings.disable_when_muted && recognitionActive) {
-        info("[OSC] VRChat unmuted while disable_when_muted is active. Resuming recognition...");
-        // Use a short delay to ensure state updates properly
-        setTimeout(() => {
-          if (sr) {
-            info("[OSC] Restarting recognition after unmute");
-            sr.restart();
-          }
-        }, 300);
-      }
+      // Let the useEffect handle recognition state management
+      // Removed direct sr.start() call to avoid race conditions
     });
     
     // Listen for VRChat connection status
@@ -337,6 +373,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     // Start VRChat listener in Rust backend
     invoke("start_vrc_listener").catch(e => {
       error(`[OSC] Error starting VRChat listener: ${e}`);
+      // This is critical - emit a status event so UI can show error
+      // We can fallback gracefully without VRChat integration
     });
     
     // Microphone detection with a fallback for when labels aren't immediately available
@@ -401,9 +439,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       
       // Send typing status if configured
       if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
-        invoke("send_typing", { 
-          address: config.vrchat_settings.osc_address, 
-          port: `${config.vrchat_settings.osc_port}` 
+        invoke("send_typing", {
+          address: config.vrchat_settings.osc_address,
+          port: `${config.vrchat_settings.osc_port}`
+        }).catch(e => {
+          error(`[SR] Error sending typing status while talking: ${e}`);
         });
       }
       
@@ -425,9 +465,17 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     
     return () => {
       clearInterval(microphoneCheckInterval);
-      unlistenVrcMute.then(unlisten => unlisten());
-      unlistenVrcStatus.then(unlisten => unlisten());
-      unlistenVrcError.then(unlisten => unlisten());
+      
+      // Properly cleanup event listeners
+      unlistenVrcMute.then(unlisten => unlisten()).catch(e => {
+        error(`[CLEANUP] Error cleaning up VRC mute listener: ${e}`);
+      });
+      unlistenVrcStatus.then(unlisten => unlisten()).catch(e => {
+        error(`[CLEANUP] Error cleaning up VRC status listener: ${e}`);
+      });
+      unlistenVrcError.then(unlisten => unlisten()).catch(e => {
+        error(`[CLEANUP] Error cleaning up VRC error listener: ${e}`);
+      });
       
       // Don't destroy the global speech recognizer, just stop it temporarily
       if (sr && sr === globalSpeechRecognizer) {
@@ -573,9 +621,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         if (!globalSpeechRecognizer.status()) {
           info('[NETWORK] Restarting speech recognition after reconnection');
           try {
-            globalSpeechRecognizer.restart();
+            // Use start() instead of restart() to ensure recognition actually resumes
+            globalSpeechRecognizer.start();
           } catch (e) {
-            error(`[NETWORK] Error restarting recognizer after reconnect: ${e}`);
+            error(`[NETWORK] Error starting recognizer after reconnect: ${e}`);
           }
         }
       }
@@ -588,6 +637,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         try {
           info('[NETWORK] Stopping speech recognition due to connection loss');
           globalSpeechRecognizer.stop();
+          // Clear any queued transcripts to prevent a backlog once we come back online
+          detectionQueue = [];
+          setSourceText('');
+          setTranslatedText('');
         } catch (e) {
           error(`[NETWORK] Error stopping recognizer on connection loss: ${e}`);
         }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Config, saveConfig, speed_presets } from '../utils/config';
+import { Config, saveConfig, speed_presets, WHISPER_MODELS, WhisperModel } from '../utils/config';
+import { Whisper } from '../recognizers/Whisper';
 import { info, error } from '@tauri-apps/plugin-log';
+import { listen } from '@tauri-apps/api/event';
 
 interface SettingsProps {
   config: Config;
@@ -14,6 +16,9 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{text: string, isError: boolean} | null>(null);
+  const [whisperModels, setWhisperModels] = useState<WhisperModel[]>([...WHISPER_MODELS]);
+  const [downloadingModels, setDownloadingModels] = useState<Set<string>>(new Set());
+  const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
 
   // After state declarations
   const hasChangesRef = useRef(hasChanges);
@@ -64,6 +69,44 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     };
   }, []);
 
+  // Load Whisper model status on component mount
+  useEffect(() => {
+    const loadWhisperModelStatus = async () => {
+      try {
+        const downloadedModels = await Whisper.getDownloadedModels();
+        setWhisperModels(prevModels =>
+          prevModels.map(model => ({
+            ...model,
+            downloaded: downloadedModels.includes(model.id)
+          }))
+        );
+      } catch (err) {
+        error(`[SETTINGS] Error loading Whisper model status: ${err}`);
+      }
+    };
+
+    loadWhisperModelStatus();
+  }, []);
+
+  // Listen for download progress events
+  useEffect(() => {
+    const unlisten = listen('download-progress', (event) => {
+      const payload = event.payload as { model: string; file: string; progress: number; downloaded: number; total: number };
+      
+      setDownloadProgress(prev => {
+        const newProgress = new Map(prev);
+        newProgress.set(payload.model, Math.round(payload.progress));
+        return newProgress;
+      });
+      
+      info(`[SETTINGS] Download progress for ${payload.model}: ${Math.round(payload.progress)}% (${payload.file})`);
+    });
+    
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, []);
+
   const updateLocalConfig = (updates: Partial<Config>) => {
     setLocalConfig(prev => ({
       ...prev,
@@ -105,6 +148,68 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     
     if (onClose) {
       onClose();
+    }
+  };
+
+  const handleDownloadModel = async (modelId: string) => {
+    setDownloadingModels(prev => new Set(prev).add(modelId));
+    setDownloadProgress(prev => {
+      const newProgress = new Map(prev);
+      newProgress.set(modelId, 0);
+      return newProgress;
+    });
+    setSaveMessage(null); // Clear any previous messages
+    
+    try {
+      info(`[SETTINGS] Starting download for Whisper model: ${modelId}`);
+      
+      // Add timeout to prevent hanging (increased to 5 minutes for large models)
+      const downloadPromise = Whisper.downloadModel(modelId);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Download timeout after 5 minutes')), 300000)
+      );
+      
+      const success = await Promise.race([downloadPromise, timeoutPromise]);
+      
+      if (success) {
+        info(`[SETTINGS] Model ${modelId} downloaded successfully`);
+        setWhisperModels(prevModels =>
+          prevModels.map(model =>
+            model.id === modelId
+              ? { ...model, downloaded: true, downloading: false }
+              : model
+          )
+        );
+        setSaveMessage({ text: `Model ${modelId} downloaded successfully!`, isError: false });
+        
+        // Auto-clear success message after 5 seconds
+        setTimeout(() => setSaveMessage(null), 5000);
+      } else {
+        error(`[SETTINGS] Failed to download model ${modelId}`);
+        setSaveMessage({ text: `Failed to download model ${modelId}`, isError: true });
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error(`[SETTINGS] Error downloading model ${modelId}: ${errorMessage}`);
+      setSaveMessage({
+        text: `Error downloading model: ${errorMessage}`,
+        isError: true
+      });
+    } finally {
+      // Always clear the downloading state and progress, even if there was an error
+      setDownloadingModels(prev => {
+        const next = new Set(prev);
+        next.delete(modelId);
+        return next;
+      });
+      
+      setDownloadProgress(prev => {
+        const newProgress = new Map(prev);
+        newProgress.delete(modelId);
+        return newProgress;
+      });
+      
+      info(`[SETTINGS] Download process completed for model: ${modelId}`);
     }
   };
 
@@ -166,9 +271,204 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
           </div>
         </div>
       </div>
+
+      {/* Speech Recognition Settings */}
+      <div className="modern-card animate-slide-up animate-delay-100">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-white">Speech Recognition</h3>
+            <p className="text-white/60 text-sm">Choose your preferred speech recognition engine</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {/* Recognizer Selection */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-white/80">
+              Recognition Engine
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* WebSpeech Option */}
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.recognizer === 'webspeech'
+                  ? 'bg-gradient-to-r from-blue-500/20 to-purple-600/20 border-2 border-blue-500/50'
+                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+              }`}>
+                <input
+                  type="radio"
+                  name="recognizer"
+                  value="webspeech"
+                  checked={localConfig.recognizer === 'webspeech'}
+                  onChange={(e) => updateLocalConfig({ recognizer: e.target.value })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">WebSpeech API</div>
+                  <div className="text-white/60 text-sm mt-1">
+                    Browser-based, fast, requires internet
+                  </div>
+                </div>
+                {localConfig.recognizer === 'webspeech' && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
+
+              {/* Whisper Option */}
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.recognizer === 'whisper'
+                  ? 'bg-gradient-to-r from-green-500/20 to-teal-600/20 border-2 border-green-500/50'
+                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+              }`}>
+                <input
+                  type="radio"
+                  name="recognizer"
+                  value="whisper"
+                  checked={localConfig.recognizer === 'whisper'}
+                  onChange={(e) => updateLocalConfig({ recognizer: e.target.value })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">OpenAI Whisper</div>
+                  <div className="text-white/60 text-sm mt-1">
+                    Local processing, works offline, high accuracy
+                  </div>
+                </div>
+                {localConfig.recognizer === 'whisper' && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-green-500 to-teal-600 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
+
+          {/* Whisper Model Selection */}
+          {localConfig.recognizer === 'whisper' && (
+            <div className="space-y-4 pt-4 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-white/80">
+                  Whisper Model
+                </label>
+                <div className="text-xs text-white/50">
+                  Download required models first
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {whisperModels.map((model) => (
+                  <div key={model.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+                    <div className="flex items-center space-x-4 flex-1">
+                      {/* Model Selection Radio */}
+                      <label className="flex items-center cursor-pointer">
+                        <input
+                          type="radio"
+                          name="whisper_model"
+                          value={model.id}
+                          checked={localConfig.whisper_model === model.id}
+                          onChange={(e) => updateLocalConfig({ whisper_model: e.target.value })}
+                          disabled={!model.downloaded}
+                          className="sr-only"
+                        />
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          model.downloaded
+                            ? (localConfig.whisper_model === model.id
+                                ? 'border-green-500 bg-green-500'
+                                : 'border-white/30 hover:border-green-500')
+                            : 'border-white/20 cursor-not-allowed'
+                        }`}>
+                          {localConfig.whisper_model === model.id && model.downloaded && (
+                            <div className="w-2 h-2 rounded-full bg-white"></div>
+                          )}
+                        </div>
+                      </label>
+
+                      {/* Model Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className={`font-medium ${model.downloaded ? 'text-white' : 'text-white/50'}`}>
+                            {model.name}
+                          </span>
+                          <span className="text-xs text-white/40">({model.size})</span>
+                          {model.downloaded && (
+                            <div className="flex items-center space-x-1 text-xs text-green-400">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              <span>Downloaded</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-xs text-white/50 mt-1">{model.quality}</div>
+                      </div>
+                    </div>
+
+                    {/* Download Button */}
+                    {!model.downloaded && (
+                      <div className="flex flex-col items-end space-y-2">
+                        {downloadingModels.has(model.id) && downloadProgress.has(model.id) && (
+                          <div className="text-xs text-white/70">
+                            {downloadProgress.get(model.id)}%
+                          </div>
+                        )}
+                        <button
+                          onClick={() => handleDownloadModel(model.id)}
+                          disabled={downloadingModels.has(model.id)}
+                          className={`btn-modern text-xs px-3 py-2 flex items-center space-x-2 ${
+                            downloadingModels.has(model.id)
+                              ? 'bg-white/10 text-white/50 cursor-not-allowed'
+                              : 'btn-primary'
+                          }`}
+                        >
+                          {downloadingModels.has(model.id) ? (
+                            <>
+                              <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                              </svg>
+                              <span>
+                                {downloadProgress.has(model.id)
+                                  ? `${downloadProgress.get(model.id)}%`
+                                  : 'Downloading...'
+                                }
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+                              </svg>
+                              <span>Download</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Model Selection Info */}
+              <div className="text-xs text-white/50 bg-white/5 rounded-lg p-3">
+                <strong>Model Guide:</strong> Tiny/Base for real-time use, Small/Medium for balanced performance, Large for best accuracy.
+                Models are downloaded once and stored locally for offline use.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* VRChat Settings */}
-      <div className="modern-card animate-slide-up animate-delay-100">
+      <div className="modern-card animate-slide-up animate-delay-200">
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -237,7 +537,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       </div>
 
       {/* Advanced Settings */}
-      <div className="modern-card animate-slide-up animate-delay-200">
+      <div className="modern-card animate-slide-up animate-delay-300">
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -319,7 +619,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       </div>
       
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 animate-slide-up animate-delay-300">
+      <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 animate-slide-up animate-delay-400">
         {/* Save Message */}
         {saveMessage && (
           <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-medium ${

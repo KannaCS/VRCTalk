@@ -7,6 +7,9 @@ use std::thread;
 use tauri::AppHandle;
 use tauri::Emitter;
 
+mod whisper;
+use whisper::*;
+
 static LISTENER_STARTED: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
@@ -140,7 +143,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             send_typing,
             send_message,
-            start_vrc_listener
+            start_vrc_listener,
+            whisper_download_model,
+            whisper_is_model_downloaded,
+            whisper_get_downloaded_models,
+            whisper_transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

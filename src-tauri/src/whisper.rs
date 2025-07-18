@@ -14,6 +14,40 @@ static MODEL_CONFIGS: &[(&str, &str, &[&str])] = &[
     ("large", "openai/whisper-large-v3", &["config.json", "model.safetensors", "tokenizer.json"]),
 ];
 
+// Audio processing validation function
+fn validate_audio_data(audio_data: &[u8]) -> Result<(), String> {
+    if audio_data.is_empty() {
+        return Err("Audio data is empty".to_string());
+    }
+    
+    // Basic audio format validation
+    if audio_data.len() < 44 {
+        return Err("Audio data too short (less than WAV header size)".to_string());
+    }
+    
+    // Check for reasonable audio data size (3 seconds at 16kHz mono = ~96KB)
+    if audio_data.len() > 10_000_000 {
+        return Err("Audio data too large (>10MB)".to_string());
+    }
+    
+    Ok(())
+}
+
+// Audio format detection and validation
+fn detect_audio_format(audio_data: &[u8]) -> Result<String, String> {
+    if audio_data.len() < 4 {
+        return Err("Audio data too short for format detection".to_string());
+    }
+    
+    // Check for WAV header
+    if &audio_data[0..4] == b"RIFF" {
+        return Ok("WAV".to_string());
+    }
+    
+    // Check for raw PCM (assume if no header detected)
+    Ok("PCM".to_string())
+}
+
 fn get_models_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     println!("Getting models directory path...");
     
@@ -306,33 +340,101 @@ pub async fn whisper_get_downloaded_models(app_handle: tauri::AppHandle) -> Resu
 #[tauri::command]
 pub async fn whisper_transcribe(
     app_handle: tauri::AppHandle,
-    _audio_data: Vec<u8>,
+    audio_data: Vec<u8>,
     model: String,
-    _language: String,
+    language: String,
 ) -> Result<String, String> {
-    println!("Starting transcription with model: {}", model);
+    println!("=== WHISPER TRANSCRIPTION START ===");
+    println!("Model: {}, Language: {}, Audio data size: {} bytes", model, language, audio_data.len());
+
+    // Validate audio data
+    validate_audio_data(&audio_data)?;
+    
+    // Detect and validate audio format
+    let audio_format = detect_audio_format(&audio_data)?;
+    println!("Detected audio format: {}", audio_format);
 
     // Check if model is downloaded
     if !whisper_is_model_downloaded(app_handle.clone(), model.clone()).await? {
-        return Err(format!("Model {} is not downloaded", model));
+        let error_msg = format!("Model {} is not downloaded. Please download the model first.", model);
+        println!("ERROR: {}", error_msg);
+        return Err(error_msg);
     }
 
     let model_path = get_model_path(&app_handle, &model)?;
+    println!("Model path: {:?}", model_path);
+    
+    // Validate model files exist
+    let model_info = MODEL_CONFIGS
+        .iter()
+        .find(|(id, _, _)| *id == model)
+        .ok_or_else(|| format!("Unknown model: {}", model))?;
+    
+    let (_, _, required_files) = *model_info;
+    
+    // Check all required files
+    for file in required_files {
+        let file_path = model_path.join(file);
+        if !file_path.exists() {
+            return Err(format!("Model file {} is missing", file));
+        }
+        
+        let file_size = fs::metadata(&file_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        
+        if file_size == 0 {
+            return Err(format!("Model file {} is empty", file));
+        }
+        
+        println!("Validated model file: {} ({} bytes)", file, file_size);
+    }
     
     // Load model configuration
     let config_path = model_path.join("config.json");
-    let _config_content = fs::read_to_string(&config_path)
+    let config_content = fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config file: {}", e))?;
-
-    // For now, return a placeholder result
-    // In a real implementation, you would:
-    // 1. Process the audio data (convert to proper format, resample to 16kHz)
-    // 2. Load the Whisper model using candle or another ML framework
-    // 3. Run inference
-    // 4. Return the transcription result
     
-    println!("Transcription request processed - returning placeholder");
+    println!("Model configuration loaded successfully");
     
-    // Return empty string to indicate no speech detected (for now)
+    // Parse config to get model parameters
+    let config: serde_json::Value = serde_json::from_str(&config_content)
+        .map_err(|e| format!("Failed to parse config JSON: {}", e))?;
+    
+    // Log some config details for debugging
+    if let Some(model_type) = config.get("model_type") {
+        println!("Model type: {}", model_type);
+    }
+    
+    // Emit progress event to frontend
+    let progress_payload = serde_json::json!({
+        "model": model,
+        "status": "processing",
+        "message": "Audio data validated, model loaded"
+    });
+    let _ = app_handle.emit("transcription-progress", &progress_payload);
+    
+    // TODO: Implement actual ML inference
+    // For now, return a more informative placeholder result
+    println!("=== WHISPER TRANSCRIPTION PROCESSING ===");
+    println!("Audio format: {}, Size: {} bytes", audio_format, audio_data.len());
+    println!("Model: {}, Language: {}", model, language);
+    
+    // Simulate some processing time and provide feedback
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    
+    // Emit completion event
+    let completion_payload = serde_json::json!({
+        "model": model,
+        "status": "completed",
+        "message": "Transcription completed (placeholder mode)"
+    });
+    let _ = app_handle.emit("transcription-progress", &completion_payload);
+    
+    println!("=== WHISPER TRANSCRIPTION COMPLETE ===");
+    println!("Transcription request processed successfully");
+    
+    // Return empty string to indicate no speech detected (placeholder implementation)
+    // In a real implementation, this would return the actual transcription
     Ok("".to_string())
 }

@@ -311,6 +311,7 @@ export class WebSpeech extends Recognizer {
             
             // For language changes, it's safer to recreate the recognition object completely
             const wasRunning = this.running;
+            info(`[WEBSPEECH] Language change - was running: ${wasRunning}`);
             
             try {
                 // First try to stop the current recognition instance
@@ -343,9 +344,10 @@ export class WebSpeech extends Recognizer {
                     // Initialize a fresh recognition instance with proper handlers
                     this.initRecognition();
                     
-                    // Attempt to start the new instance if recognition was running
+                    // Always restart recognition after language change if it was running before
                     if (wasRunning) {
                         info("[WEBSPEECH] Restarting recognition with new language");
+                        this.running = true; // Ensure running state is set before starting
                         setTimeout(() => {
                             this.start();
                         }, 200);
@@ -355,11 +357,12 @@ export class WebSpeech extends Recognizer {
                 } catch (err: unknown) {
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Error recreating recognition instance: ${errorMessage}`);
-                    this.running = false;
                     
                     // One final attempt with the original method
                     try {
                         if (wasRunning) {
+                            info("[WEBSPEECH] Attempting final restart after error");
+                            this.running = true; // Ensure running state is set
                             setTimeout(() => {
                                 this.start();
                             }, 500);
@@ -367,6 +370,7 @@ export class WebSpeech extends Recognizer {
                     } catch (finalErr: unknown) {
                         const finalErrorMsg = finalErr instanceof Error ? finalErr.message : String(finalErr);
                         error(`[WEBSPEECH] Fatal error during language change: ${finalErrorMsg}`);
+                        this.running = false;
                     }
                 }
             }, 300);

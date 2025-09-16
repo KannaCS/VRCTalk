@@ -74,10 +74,8 @@ const App: React.FC = () => {
             {/* Logo Animation */}
             <div className="flex justify-center mb-8">
               <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-blue-600 flex items-center justify-center animate-pulse-soft">
-                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                  </svg>
+                <div className="w-20 h-20 rounded-2xl bg-blue-600/20 backdrop-blur-sm flex items-center justify-center animate-pulse-soft">
+                  <img src="/src/assets/logo.png" alt="VRCTalk Logo" className="w-12 h-12 object-contain" />
                 </div>
                 
                 {/* Pulsing Rings */}
@@ -137,10 +135,8 @@ const App: React.FC = () => {
           <div className="flex justify-between items-center">
             {/* Logo and Title */}
             <div className="flex items-center space-x-4 animate-slide-down">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{background:'var(--primary-color)'}}>
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                </svg>
+              <div className="w-12 h-12 flex items-center justify-center">
+                <img src="/src/assets/logo.png" alt="VRCTalk Logo" className="w-10 h-10 object-contain" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">

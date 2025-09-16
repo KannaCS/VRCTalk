@@ -80,6 +80,18 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
             downloaded: downloadedModels.includes(model.id)
           }))
         );
+        
+        // Check for any ongoing downloads by checking if we receive progress events
+        // If we get progress events within 2 seconds, assume downloads are ongoing
+        const progressCheckTimeout = setTimeout(() => {
+          // If no progress events received, clear any stale downloading states
+          setDownloadingModels(new Set());
+          setDownloadProgress(new Map());
+        }, 2000);
+        
+        // Store timeout ID to clear it if progress events are received
+        (window as any).__progressCheckTimeout = progressCheckTimeout;
+        
       } catch (err) {
         error(`[SETTINGS] Error loading Whisper model status: ${err}`);
       }
@@ -93,6 +105,23 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     const unlisten = listen('download-progress', (event) => {
       const payload = event.payload as { model: string; file: string; progress: number; downloaded: number; total: number };
       
+      // Clear the progress check timeout if it exists (indicates ongoing download)
+      if ((window as any).__progressCheckTimeout) {
+        clearTimeout((window as any).__progressCheckTimeout);
+        (window as any).__progressCheckTimeout = null;
+      }
+      
+      // If we receive progress events, it means download is ongoing
+      // Set the model as downloading if not already set
+      setDownloadingModels(prev => {
+        if (!prev.has(payload.model)) {
+          const newSet = new Set(prev);
+          newSet.add(payload.model);
+          return newSet;
+        }
+        return prev;
+      });
+      
       setDownloadProgress(prev => {
         const newProgress = new Map(prev);
         newProgress.set(payload.model, Math.round(payload.progress));
@@ -100,6 +129,38 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       });
       
       info(`[SETTINGS] Download progress for ${payload.model}: ${Math.round(payload.progress)}% (${payload.file})`);
+      
+      // If progress reaches 100%, the download is complete
+      if (payload.progress >= 100) {
+        setTimeout(() => {
+          setDownloadingModels(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(payload.model);
+            return newSet;
+          });
+          
+          setDownloadProgress(prev => {
+            const newProgress = new Map(prev);
+            newProgress.delete(payload.model);
+            return newProgress;
+          });
+          
+          // Refresh model status to show as downloaded
+          Whisper.getDownloadedModels().then(downloadedModels => {
+            setWhisperModels(prevModels =>
+              prevModels.map(model => ({
+                ...model,
+                downloaded: downloadedModels.includes(model.id)
+              }))
+            );
+          }).catch(err => {
+            error(`[SETTINGS] Error refreshing model status: ${err}`);
+          });
+          
+          setSaveMessage({ text: `Model ${payload.model} downloaded successfully!`, isError: false });
+          setTimeout(() => setSaveMessage(null), 5000);
+        }, 1000); // Small delay to ensure backend has finished processing
+      }
     });
     
     return () => {

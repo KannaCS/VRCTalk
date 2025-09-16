@@ -39,7 +39,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
   const [targetLanguage, setTargetLanguage] = useState(config.target_language);
   const [isChangingLanguage, setIsChangingLanguage] = useState(false);
   const [typedText, setTypedText] = useState("");
-
+  const [micStatus, setMicStatus] = useState<'initializing'|'active'|'listening'|'muted'|'disconnected'|'error'>(
+    'initializing'
+  );
+  const firstResultRef = useRef(false);
+  
+  
   // Use global speech recognizer to prevent multiple instances
   const [sr, setSr] = useState<Recognizer | null>(globalSpeechRecognizer);
   
@@ -93,6 +98,16 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
             
             // Add small delay before allowing new detections to ensure complete transition
             const timeout2 = setTimeout(() => {
+              // Ensure recognition is actually running after language change
+              if (sr && recognitionActive && !sr.status()) {
+                info("[LANGUAGE] Recognition not running after language change, forcing restart");
+                try {
+                  sr.start();
+                } catch (e) {
+                  error(`[LANGUAGE] Error starting recognition after language change: ${e}`);
+                }
+              }
+              
               // Force trigger a state update to refresh detection state
               setTriggerUpdate(prev => !prev);
               setIsChangingLanguage(false);
@@ -150,7 +165,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       try {
         sr.stop();
       } catch (e) {
-        error(`[SR] Error stopping recognition by user request: ${e}`);
+          error(`[SR] Error stopping recognition by user request: ${e}`);
       }
     }
   }, [recognitionActive, vrcMuted, config.vrchat_settings.disable_when_muted, sr]);
@@ -263,6 +278,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
               onNewMessage(originalText, finalTranslation);
             }
             
+            
             // Wait for chatbox to process
             await new Promise(r => setTimeout(r, calculateMinWaitTime(
               finalTranslation, 
@@ -300,16 +316,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     processTranslation();
     
     // Trigger periodic updates to check the queue
-    const timer = setTimeout(() => {
+    setTimeout(() => {
       if (!abortController.signal.aborted) {
         setTriggerUpdate(prev => !prev);
       }
     }, 100);
     
-    return () => {
-      clearTimeout(timer);
-      abortController.abort();
-    };
   }, [triggerUpdate]);
   
   // Initialize speech recognition and VRC mute listener
@@ -422,6 +434,56 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         });
     }, 1000);
     
+    // One-time permission unlock to reveal device labels and devicechange hook
+    let deviceChangeHandler: any;
+    let fallbackTimeout: any;
+    const initMedia = async () => {
+      try {
+        // Ask for audio permission once; then stop tracks immediately
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+      } catch (e) {
+        // Non-blocking; we'll keep generic labels
+      }
+
+      const refreshDevices = async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter(d => d.kind === 'audioinput');
+          if (audioInputs.length > 0) {
+            let micToUse = audioInputs[0];
+            if (config.selected_microphone) {
+              const specific = audioInputs.find(d => d.deviceId === config.selected_microphone);
+              if (specific) micToUse = specific;
+            }
+            const label = micToUse.label?.trim();
+            if (label) {
+              const match = label.match(/^(.*?)(\s+\([^)]+\))?$/);
+              const micName = match ? match[1] : label;
+              setDefaultMicrophone(micName);
+            }
+          }
+        } catch (_) {
+          // ignore
+        }
+      };
+
+      await refreshDevices();
+
+      deviceChangeHandler = async () => {
+        await refreshDevices();
+      };
+      navigator.mediaDevices.addEventListener?.('devicechange', deviceChangeHandler);
+
+      // Fallback timeout: if SR is running or we got any result, clear initializing label
+      fallbackTimeout = setTimeout(() => {
+        if ((globalSpeechRecognizer?.status() || firstResultRef.current) && defaultMicrophone === 'Initializing...') {
+          setDefaultMicrophone('Microphone Active');
+        }
+      }, 4000);
+    };
+    initMedia();
+    
     // Initialize speech recognition
     const recognizer = new WebSpeech(config.source_language, config.selected_microphone);
     globalSpeechRecognizer = recognizer;
@@ -436,6 +498,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         info("[MEDIA] Received speech while microphone showed initializing. Setting status to Microphone Active.");
         setDefaultMicrophone("Microphone Active");
       }
+      firstResultRef.current = firstResultRef.current || isFinal || !!result;
+      setMicStatus(isFinal ? 'active' : 'listening');
       
       // Send typing status if configured
       if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
@@ -477,6 +541,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         error(`[CLEANUP] Error cleaning up VRC error listener: ${e}`);
       });
       
+      // Cleanup media listeners and timers
+      if (deviceChangeHandler) {
+        try { navigator.mediaDevices.removeEventListener?.('devicechange', deviceChangeHandler); } catch {}
+      }
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      
       // Don't destroy the global speech recognizer, just stop it temporarily
       if (sr && sr === globalSpeechRecognizer) {
         info("[SR] Pausing speech recognition on component unmount (keeping global instance)");
@@ -485,6 +555,15 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     };
   }, []); // Run on every component mount/unmount
   
+  // Derive mic status from recognition/mute states
+  useEffect(() => {
+    if (vrcMuted && recognitionActive && config.vrchat_settings.disable_when_muted) {
+      setMicStatus('muted');
+    } else if (recognitionActive && sr?.status()) {
+      setMicStatus(detecting ? 'listening' : 'active');
+    }
+  }, [recognitionActive, vrcMuted, config.vrchat_settings.disable_when_muted, sr, detecting]);
+
   // Handle source language change
   const handleSourceLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newLang = e.target.value;
@@ -657,6 +736,24 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     };
   }, []);
 
+  // Reflect network status into mic status
+  useEffect(() => {
+    const apply = () => {
+      if (!navigator.onLine) {
+        setMicStatus('disconnected');
+        return;
+      }
+      if (vrcMuted && recognitionActive && config.vrchat_settings.disable_when_muted) {
+        setMicStatus('muted');
+      } else if (recognitionActive && sr?.status()) {
+        setMicStatus(detecting ? 'listening' : 'active');
+      } else if (!recognitionActive) {
+        setMicStatus('active');
+      }
+    };
+    apply();
+  }, [recognitionActive, detecting, vrcMuted, config.vrchat_settings.disable_when_muted, sr]);
+
   // Helper to map language code to display tag
   const getLangTag = (langCode: string): string => {
     const base = langCode.split('-')[0].toLowerCase();
@@ -677,212 +774,222 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     setTriggerUpdate(prev => !prev);
   };
 
-  // UI component return (new grid layout for compact, no-scroll design)
+  // UI component return (Split Compact: sticky header, primary panel 2/3, controls 1/3)
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
-      {/* COLUMN 1 – controls */}
-      <div className="flex flex-col gap-3">
-        {/* Status Header */}
-        <div className="modern-card animate-slide-up">
-          <div className="space-y-1">
-            <h2 className="text-lg font-bold text-white flex items-center gap-1">
-              Voice Translation
-            </h2>
-            <p className="text-xs text-white/70">
+    <div className="flex flex-col gap-3">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-white/5 bg-white/0 rounded-xl border border-white/10 px-3 py-2">
+        <div className="flex items-center gap-3 justify-between">
+          {/* Language pill */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-2 bg-white/5 text-white rounded-lg px-2 py-1">
               <span className="font-semibold text-blue-300">
                 {langSource[findLangSourceIndex(sourceLanguage)]?.name || sourceLanguage}
               </span>
-              {' → '}
+              <span className="text-white/40">→</span>
               <span className="font-semibold text-purple-300">
                 {langTo[findLangToIndex(targetLanguage)]?.name || targetLanguage}
               </span>
-            </p>
+            </span>
           </div>
 
-          {/* Status Indicators */}
-          <div className="flex flex-wrap items-center gap-3 mt-4">
-            {/* Microphone Status */}
-            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-3 py-1.5">
+          {/* Status chips */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-2 py-1">
               <div className="relative">
-                <div className={`status-dot ${recognitionActive ? 'status-active' : 'status-inactive'}`}></div>
+                <div className={`status-dot ${
+                  micStatus === 'muted' ? 'status-warning' :
+                  (micStatus === 'disconnected' || micStatus === 'error' || micStatus === 'initializing') ? 'status-inactive' :
+                  'status-active'
+                }`}></div>
                 {recognitionActive && detecting && <div className="mic-pulse" />}
               </div>
-              <span className="text-xs text-white/70 truncate max-w-[120px]" title={defaultMicrophone}>{defaultMicrophone}</span>
+              <span className="text-[11px] text-white/70 truncate max-w-[160px]" title={defaultMicrophone}>
+                {(() => {
+                  switch (micStatus) {
+                    case 'initializing': return 'Initializing…';
+                    case 'listening': return 'Listening';
+                    case 'muted': return 'Muted';
+                    case 'disconnected': return 'Offline';
+                    case 'error': return 'Mic Error';
+                    case 'active':
+                    default:
+                      return defaultMicrophone || 'Microphone Active';
+                  }
+                })()}
+              </span>
             </div>
-
-            {/* VRChat Status */}
-            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-3 py-1.5">
+            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-2 py-1">
               <div className={`status-dot ${vrcMuted ? 'status-warning' : 'status-active'}`}></div>
-              <span className="text-xs text-white/70">{vrcMuted ? 'Muted' : 'Connected'}</span>
+              <span className="text-[11px] text-white/70">{vrcMuted ? 'Muted' : 'Connected'}</span>
             </div>
           </div>
-        </div>
 
-        {/* Language Selection */}
-        <div className="modern-card animate-slide-up animate-delay-100">
-          <h3 className="text-sm font-semibold text-white mb-3">Languages</h3>
-
-          <div className="grid grid-cols-2 gap-2 items-end">
-            <div>
-              <label className="block text-[10px] font-medium text-white/60 mb-1">Source</label>
-              <select
-                value={sourceLanguage}
-                onChange={handleSourceLanguageChange}
-                className="select-modern text-xs"
-                disabled={isChangingLanguage}
-              >
-                {langSource.map((lang, index) => (
-                  <option key={`source-${index}`} value={lang.code}>{lang.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-medium text-white/60 mb-1">Target</label>
-              <select
-                value={targetLanguage}
-                onChange={handleTargetLanguageChange}
-                className="select-modern text-xs"
-                disabled={isChangingLanguage}
-              >
-                {langTo.map((lang, index) => (
-                  <option key={`target-${index}`} value={lang.code}>{lang.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Swap Button spans full width */}
-            <div className="col-span-2 flex justify-center">
-              <button
-                onClick={swapLanguages}
-                className="swap-button h-10 w-10 lg:h-12 lg:w-12"
-                disabled={isChangingLanguage}
-                title="Swap Languages"
-              >
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+          {/* Recognition toggle */}
+          <button
+            onClick={toggleRecognition}
+            className={`btn-modern flex items-center space-x-1 text-xs ${recognitionActive ? 'btn-danger' : 'btn-success'}`}
+            disabled={isChangingLanguage}
+          >
+            {recognitionActive ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
                 </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Recognition Control */}
-        <div className="modern-card animate-slide-up animate-delay-200 flex flex-col">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-white">Recognition</h3>
-            <button
-              onClick={toggleRecognition}
-              className={`btn-modern flex items-center space-x-1 text-xs ${recognitionActive ? 'btn-danger' : 'btn-success'}`}
-              disabled={isChangingLanguage}
-            >
-              {recognitionActive ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                  </svg>
-                  <span>Pause</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Start</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Manual Input */}
-        <div className="modern-card animate-slide-up animate-delay-300 flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-white">Manual Input</h3>
-          <div className="flex items-center space-x-2">
-            <input
-              type="text"
-              className="flex-1 text-xs bg-white/5 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/40"
-              placeholder="Type and press Enter…"
-              value={typedText}
-              onChange={e => setTypedText(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleManualSubmit();
-                }
-              }}
-              disabled={isChangingLanguage}
-            />
-            <button
-              onClick={handleManualSubmit}
-              className="btn-modern btn-primary text-xs px-3 py-1.5"
-              disabled={typedText.trim().length === 0 || isChangingLanguage}
-            >
-              Send
-            </button>
-          </div>
+                <span>Pause</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Start</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* COLUMN 2-3 – speech & translation display */}
-      <div className="lg:col-span-2 flex flex-col gap-3">
-        <div className="modern-card animate-slide-up lg:h-full flex flex-col">
-          <div className={`grid grid-cols-1 ${config.mode === 0 ? 'md:grid-cols-2' : ''} gap-3 flex-1 overflow-hidden`}>
-            {/* Detected Speech */}
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-sm font-medium text-white">Detected</h4>
-                <div className="flex items-center space-x-1">
-                  {detecting && (
-                    <div className="flex items-center space-x-1 text-[10px] text-yellow-300">
-                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                      <span>Listening</span>
-                    </div>
-                  )}
-                  {isChangingLanguage && (
-                    <div className="flex items-center space-x-1 text-[10px] text-blue-300">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      <span>Updating</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className={`text-display-modern flex-1 ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
-                <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
-                  {sourceText || (
-                    <span className="text-white/50 italic">
-                      {isChangingLanguage ? 'Changing language…' : 'Waiting…'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Translation - only in translation mode */}
-            {config.mode === 0 && (
+      {/* Main Grid */}
+      <div className="grid gap-3 lg:grid-cols-3">
+        {/* Left 2/3: Primary translation panel with history */}
+        <div className="lg:col-span-2 flex flex-col gap-3">
+          <div className="modern-card animate-slide-up lg:h-full flex flex-col">
+            <div className={`grid grid-cols-1 ${config.mode === 0 ? 'md:grid-cols-2' : ''} gap-3 flex-1 overflow-hidden`}>
+              {/* Detected Speech */}
               <div className="flex flex-col">
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="text-sm font-medium text-white">Translation</h4>
-                  {translating && (
-                    <div className="flex items-center space-x-1 text-[10px] text-purple-300">
-                      <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-                      <span>Working</span>
-                    </div>
-                  )}
+                  <h4 className="text-sm font-medium text-white">Detected</h4>
+                  <div className="flex items-center space-x-1">
+                    {detecting && (
+                      <div className="flex items-center space-x-1 text-[10px] text-yellow-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                        <span>Listening</span>
+                      </div>
+                    )}
+                    {isChangingLanguage && (
+                      <div className="flex items-center space-x-1 text-[10px] text-blue-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                        <span>Updating</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className={`text-display-modern flex-1 ${translating ? 'text-display-active' : ''}`}>                
+                <div className={`text-display-modern flex-1 ${detecting || isChangingLanguage ? 'text-display-active' : ''}`}>
                   <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
-                    {translatedText || (
+                    {sourceText || (
                       <span className="text-white/50 italic">
-                        {isChangingLanguage ? 'Changing language…' : 'Translation will appear…'}
+                        {isChangingLanguage ? 'Changing language…' : 'Waiting…'}
                       </span>
                     )}
                   </div>
                 </div>
               </div>
-            )}
+
+              {/* Translation - only in translation mode */}
+              {config.mode === 0 && (
+                <div className="flex flex-col">
+                  <div className="flex items-center justify-between mb-1">
+                    <h4 className="text-sm font-medium text-white">Translation</h4>
+                    {translating && (
+                      <div className="flex items-center space-x-1 text-[10px] text-purple-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                        <span>Working</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className={`text-display-modern flex-1 ${translating ? 'text-display-active' : ''}`}>
+                    <div className="text-white text-sm leading-relaxed break-words overflow-auto max-h-full pr-1">
+                      {translatedText || (
+                        <span className="text-white/50 italic">
+                          {isChangingLanguage ? 'Changing language…' : 'Translation will appear…'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          
+        </div>
+
+        {/* Right 1/3: Controls drawer (languages + manual input) */}
+        <div className="flex flex-col gap-3">
+          {/* Languages */}
+          <div className="modern-card animate-slide-up">
+            <h3 className="text-sm font-semibold text-white mb-3">Languages</h3>
+            <div className="grid grid-cols-2 gap-2 items-end">
+              <div>
+                <label className="block text-[10px] font-medium text-white/60 mb-1">Source</label>
+                <select
+                  value={sourceLanguage}
+                  onChange={handleSourceLanguageChange}
+                  className="select-modern text-xs"
+                  disabled={isChangingLanguage}
+                >
+                  {langSource.map((lang, index) => (
+                    <option key={`source-${index}`} value={lang.code}>{lang.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-white/60 mb-1">Target</label>
+                <select
+                  value={targetLanguage}
+                  onChange={handleTargetLanguageChange}
+                  className="select-modern text-xs"
+                  disabled={isChangingLanguage}
+                >
+                  {langTo.map((lang, index) => (
+                    <option key={`target-${index}`} value={lang.code}>{lang.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2 flex justify-center">
+                <button
+                  onClick={swapLanguages}
+                  className="swap-button h-10 w-10 lg:h-12 lg:w-12"
+                  disabled={isChangingLanguage}
+                  title="Swap Languages"
+                >
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Manual Input */}
+          <div className="modern-card animate-slide-up animate-delay-100 flex flex-col gap-2">
+            <h3 className="text-sm font-semibold text-white">Manual Input</h3>
+            <div className="flex items-center space-x-2">
+              <input
+                type="text"
+                className="flex-1 text-xs bg-white/5 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/40"
+                placeholder="Type and press Enter…"
+                value={typedText}
+                onChange={e => setTypedText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleManualSubmit();
+                  }
+                }}
+                disabled={isChangingLanguage}
+              />
+              <button
+                onClick={handleManualSubmit}
+                className="btn-modern btn-primary text-xs px-3 py-1.5"
+                disabled={typedText.trim().length === 0 || isChangingLanguage}
+              >
+                Send
+              </button>
+            </div>
           </div>
         </div>
       </div>

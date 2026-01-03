@@ -3,6 +3,7 @@ use rosc::encoder;
 use rosc::{OscMessage, OscPacket, OscType};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::AppHandle;
 use tauri::Emitter;
@@ -16,7 +17,7 @@ static LISTENER_STARTED: AtomicBool = AtomicBool::new(false);
 fn send_typing(address: String, port: String) -> Result<(), String> {
     let sock = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
         .map_err(|e| format!("Failed to bind socket: {}", e))?;
-    
+
     let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
         addr: "/chatbox/typing".to_string(),
         args: vec![OscType::Bool(true)],
@@ -26,7 +27,7 @@ fn send_typing(address: String, port: String) -> Result<(), String> {
     let target = format!("{}:{}", address, port);
     sock.send_to(&msg_buf, &target)
         .map_err(|e| format!("Failed to send OSC message: {}", e))?;
-        
+
     Ok(())
 }
 
@@ -34,7 +35,7 @@ fn send_typing(address: String, port: String) -> Result<(), String> {
 fn send_message(msg: String, address: String, port: String) -> Result<(), String> {
     let sock = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
         .map_err(|e| format!("Failed to bind socket: {}", e))?;
-    
+
     let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
         addr: "/chatbox/input".to_string(),
         args: vec![OscType::String(msg), OscType::Bool(true)],
@@ -44,7 +45,7 @@ fn send_message(msg: String, address: String, port: String) -> Result<(), String
     let target = format!("{}:{}", address, port);
     sock.send_to(&msg_buf, &target)
         .map_err(|e| format!("Failed to send OSC message: {}", e))?;
-        
+
     Ok(())
 }
 
@@ -61,7 +62,7 @@ fn start_vrc_listener(app: AppHandle) -> Result<(), String> {
             Ok(mut sock) => {
                 println!("Starting OSC listener on {}...", listen_addr);
                 let _ = app.emit("vrchat-status", "connected");
-                
+
                 let mut buf = [0u8; rosc::decoder::MTU];
 
                 loop {
@@ -83,10 +84,13 @@ fn start_vrc_listener(app: AppHandle) -> Result<(), String> {
                                             // Process messages in bundle
                                             for message in bundle.content {
                                                 if let OscPacket::Message(msg) = message {
-                                                    if msg.addr.as_str() == "/avatar/parameters/MuteSelf" {
+                                                    if msg.addr.as_str()
+                                                        == "/avatar/parameters/MuteSelf"
+                                                    {
                                                         if let Some(arg) = msg.args.first() {
                                                             if let Some(mute) = arg.clone().bool() {
-                                                                let _ = app.emit("vrchat-mute", mute);
+                                                                let _ =
+                                                                    app.emit("vrchat-mute", mute);
                                                             }
                                                         }
                                                     }
@@ -103,7 +107,7 @@ fn start_vrc_listener(app: AppHandle) -> Result<(), String> {
                         Err(e) => {
                             println!("Error receiving from socket: {}", e);
                             let _ = app.emit("vrchat-status", "disconnected");
-                            
+
                             // Try to reconnect after a delay
                             thread::sleep(std::time::Duration::from_secs(5));
                             match UdpSocket::bind(listen_addr) {
@@ -129,7 +133,7 @@ fn start_vrc_listener(app: AppHandle) -> Result<(), String> {
             }
         }
     });
-    
+
     Ok(())
 }
 
@@ -140,6 +144,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_log::Builder::new().build())
+        .manage(WhisperAppState {
+            state: Arc::new(Mutex::new(None)),
+        })
         .invoke_handler(tauri::generate_handler![
             send_typing,
             send_message,

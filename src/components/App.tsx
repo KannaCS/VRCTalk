@@ -57,15 +57,15 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
         {/* Animated Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-indigo-900 to-indigo-800">
+        <div className="absolute inset-0 bg-gradient-to-br from-dark-900 via-dark-800 to-dark-700">
           <div className="absolute inset-0 opacity-20" style={{
             backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
           }}></div>
           
           {/* Floating Orbs */}
-          <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-blue-500/20 rounded-full blur-xl animate-float"></div>
-          <div className="absolute top-3/4 right-1/4 w-24 h-24 bg-purple-500/20 rounded-full blur-xl animate-float animate-delay-300"></div>
-          <div className="absolute bottom-1/4 left-1/3 w-20 h-20 bg-pink-500/20 rounded-full blur-xl animate-float animate-delay-500"></div>
+          <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-accent-300/20 rounded-full blur-xl animate-float"></div>
+          <div className="absolute top-3/4 right-1/4 w-24 h-24 bg-accent-400/20 rounded-full blur-xl animate-float animate-delay-300"></div>
+          <div className="absolute bottom-1/4 left-1/3 w-20 h-20 bg-accent-500/20 rounded-full blur-xl animate-float animate-delay-500"></div>
         </div>
 
         {/* Loading Content */}
@@ -74,20 +74,20 @@ const App: React.FC = () => {
             {/* Logo Animation */}
             <div className="flex justify-center mb-8">
               <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-blue-600/20 backdrop-blur-sm flex items-center justify-center animate-pulse-soft">
+                <div className="w-20 h-20 rounded-2xl bg-accent-400/20 backdrop-blur-sm flex items-center justify-center animate-pulse-soft">
                   <img src="/src/assets/logo.png" alt="VRCTalk Logo" className="w-12 h-12 object-contain" />
                 </div>
                 
                 {/* Pulsing Rings */}
-                <div className="absolute inset-0 rounded-2xl border-2 border-blue-400/50 animate-ping"></div>
-                <div className="absolute inset-0 rounded-2xl border-2 border-purple-400/30 animate-ping animate-delay-200"></div>
+                <div className="absolute inset-0 rounded-2xl border-2 border-accent-300/50 animate-ping"></div>
+                <div className="absolute inset-0 rounded-2xl border-2 border-accent-400/30 animate-ping animate-delay-200"></div>
               </div>
             </div>
 
             {/* Loading Text */}
             <div className="space-y-4">
               <h2 className="text-3xl font-bold text-white animate-slide-up">
-                VRC<span style={{color:'var(--secondary-color)'}}>Talk</span>
+                VRC<span className="text-accent-300">Talk</span>
               </h2>
               <p className="text-white/80 animate-slide-up animate-delay-100">
                 Initializing voice translation system...
@@ -102,9 +102,9 @@ const App: React.FC = () => {
 
               {/* Loading Dots */}
               <div className="flex justify-center space-x-2 mt-6 animate-slide-up animate-delay-300">
-                <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"></div>
-                <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce animate-delay-100"></div>
-                <div className="w-2 h-2 rounded-full bg-pink-400 animate-bounce animate-delay-200"></div>
+                <div className="w-2 h-2 rounded-full bg-accent-300 animate-bounce"></div>
+                <div className="w-2 h-2 rounded-full bg-accent-400 animate-bounce animate-delay-100"></div>
+                <div className="w-2 h-2 rounded-full bg-accent-500 animate-bounce animate-delay-200"></div>
               </div>
             </div>
           </div>
@@ -116,16 +116,16 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen relative overflow-hidden">
       {/* Dynamic Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-indigo-900 to-indigo-800">
+      <div className="absolute inset-0 bg-gradient-to-br from-dark-900 via-dark-800 to-dark-700">
         <div className="absolute inset-0 opacity-30" style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
         }}></div>
         
         {/* Animated Background Elements */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-float"></div>
-          <div className="absolute top-1/2 right-1/4 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl animate-float animate-delay-300"></div>
-          <div className="absolute bottom-1/4 left-1/2 w-32 h-32 bg-pink-500/10 rounded-full blur-3xl animate-float animate-delay-500"></div>
+          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-accent-300/10 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute top-1/2 right-1/4 w-48 h-48 bg-accent-400/10 rounded-full blur-3xl animate-float animate-delay-300"></div>
+          <div className="absolute bottom-1/4 left-1/2 w-32 h-32 bg-accent-500/10 rounded-full blur-3xl animate-float animate-delay-500"></div>
         </div>
       </div>
 
@@ -140,15 +140,15 @@ const App: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">
-                  VRC<span style={{color:'var(--secondary-color)'}}>Talk</span>
+                  VRC<span className="text-accent-300">Talk</span>
                 </h1>
-                <p className="text-white/60 text-xs">Voice Translation for VRChat</p>
+                <p className="text-dark-200 text-xs">Voice Translation for VRChat</p>
               </div>
             </div>
 
             {/* Version, History, Settings */}
             <div className="flex items-center space-x-4 animate-slide-down animate-delay-100">
-              <span className="px-3 py-1 bg-white/10 text-white/80 text-xs font-medium rounded-full backdrop-blur-sm">
+              <span className="px-3 py-1 bg-accent-400/20 text-accent-300 text-xs font-medium rounded-full backdrop-blur-sm border border-accent-400/30">
                 v0.2.4
               </span>
 
@@ -195,10 +195,10 @@ const App: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-4 border-b border-white/10">
+            <div className="flex justify-between items-center p-4 border-b border-accent-400/20">
               <div>
                 <h2 className="text-xl font-bold text-white">Settings</h2>
-                <p className="text-white/60 text-sm mt-1">Configure your VRCTalk experience</p>
+                <p className="text-dark-200 text-sm mt-1">Configure your VRCTalk experience</p>
               </div>
               <button 
                 onClick={handleSettingsToggle}
@@ -230,7 +230,7 @@ const App: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-4 border-b border-white/10">
+            <div className="flex justify-between items-center p-4 border-b border-accent-400/20">
               <h2 className="text-xl font-bold text-white">Message History</h2>
               <button 
                 onClick={handleHistoryToggle}
@@ -248,10 +248,10 @@ const App: React.FC = () => {
                 <p className="text-white/70 text-sm">No messages yet.</p>
               ) : (
                 history.map((item, idx) => (
-                  <div key={idx} className="bg-white/5 p-3 rounded-lg">
-                    <p className="text-xs text-blue-300 mb-1">{new Date(item.time).toLocaleTimeString()}</p>
-                    <p className="text-sm text-white break-words"><span className="font-semibold">Src:</span> {item.src}</p>
-                    <p className="text-sm text-purple-200 break-words mt-1"><span className="font-semibold">Tgt:</span> {item.tgt}</p>
+                  <div key={idx} className="bg-dark-800/50 p-3 rounded-lg border border-accent-400/10">
+                    <p className="text-xs text-accent-300 mb-1">{new Date(item.time).toLocaleTimeString()}</p>
+                    <p className="text-sm text-white break-words"><span className="font-semibold text-accent-200">Src:</span> {item.src}</p>
+                    <p className="text-sm text-dark-100 break-words mt-1"><span className="font-semibold text-accent-200">Tgt:</span> {item.tgt}</p>
                   </div>
                 ))
               )}

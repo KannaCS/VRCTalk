@@ -3,28 +3,28 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS Variables for consistent theming - Modern Solid Colors */
+/* CSS Variables for consistent theming - White, Black, Yellow */
 :root {
-  --primary-color: #4f46e5; /* Indigo 600 */
-  --secondary-color: #38bdf8; /* Sky 400 (optional subtle accent) */
+  --primary-color: #FCD34D; /* Yellow 300 */
+  --secondary-color: #F59E0B; /* Yellow 500 */
   --success-color: #10b981;
-  --warning-color: #f59e0b;
-  --accent-color: #4f46e5; /* Match primary for simplicity */
+  --warning-color: #FBBF24;
+  --accent-color: #FCD34D;
   --danger-color: #ef4444;
-  --glass-bg: rgba(15, 23, 42, 0.8);
-  --glass-border: rgba(148, 163, 184, 0.2);
-  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
+  --glass-bg: rgba(10, 10, 10, 0.85);
+  --glass-border: rgba(252, 211, 77, 0.2);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+  --text-primary: #FFFFFF;
+  --text-secondary: #E5E5E5;
+  --text-muted: #A3A3A3;
   --backdrop-blur: blur(20px);
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.3);
-  --shadow-intense: 0 20px 40px rgba(0, 0, 0, 0.5);
-  --surface-primary: rgba(30, 41, 59, 0.9);
-  --surface-secondary: rgba(51, 65, 85, 0.8);
-  --border-subtle: rgba(148, 163, 184, 0.1);
+  --shadow-glow: 0 0 20px rgba(252, 211, 77, 0.4);
+  --shadow-intense: 0 20px 40px rgba(0, 0, 0, 0.7);
+  --surface-primary: rgba(23, 23, 23, 0.95);
+  --surface-secondary: rgba(38, 38, 38, 0.9);
+  --border-subtle: rgba(252, 211, 77, 0.15);
 }
 
 /* Base styles */
@@ -60,7 +60,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2563eb;
+  background: var(--secondary-color);
 }
 
 /* Animation Keyframes */
@@ -135,10 +135,10 @@ body {
 
 @keyframes glow {
   0%, 100% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 20px rgba(252, 211, 77, 0.4);
   }
   50% {
-    box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 30px rgba(252, 211, 77, 0.7);
   }
 }
 
@@ -258,10 +258,10 @@ body {
 .btn-modern {
   @apply relative px-6 py-3 rounded-xl font-medium transition-all duration-300 overflow-hidden;
   background: var(--primary-color);
-  color: var(--text-primary);
+  color: #0A0A0A;
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 15px rgba(252, 211, 77, 0.4);
   position: relative;
 }
 
@@ -285,8 +285,8 @@ body {
 
 .btn-modern:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
-  background: #2563eb;
+  box-shadow: 0 8px 25px rgba(252, 211, 77, 0.5);
+  background: var(--secondary-color);
 }
 
 .btn-modern:active {
@@ -339,8 +339,8 @@ body {
 
 .input-modern:focus {
   background: var(--surface-primary);
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  border-color: rgba(252, 211, 77, 0.5);
+  box-shadow: 0 0 20px rgba(252, 211, 77, 0.3);
   transform: translateY(-1px);
 }
 
@@ -401,8 +401,8 @@ body {
 }
 
 .text-display-active {
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+  border-color: rgba(252, 211, 77, 0.5);
+  box-shadow: 0 0 30px rgba(252, 211, 77, 0.3);
 }
 
 .text-display-active::before {
@@ -452,10 +452,11 @@ body {
 
 /* Enhanced Swap Button */
 .swap-button {
-  @apply relative flex items-center justify-center rounded-full transition-transform duration-300 ease-in-out text-white overflow-hidden;
-  padding: 0.75rem; /* equal to p-3 */
+  @apply relative flex items-center justify-center rounded-full transition-transform duration-300 ease-in-out overflow-hidden;
+  padding: 0.75rem;
   background: var(--primary-color);
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+  color: #0A0A0A;
+  box-shadow: 0 4px 15px rgba(252, 211, 77, 0.4);
 }
 
 /* Ripple shine on hover */
@@ -477,14 +478,14 @@ body {
 
 .swap-button:hover {
   transform: rotate(360deg) scale(1.1);
-  background: #3c4bdd; /* slightly darker */
-  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.6);
+  background: var(--secondary-color);
+  box-shadow: 0 8px 25px rgba(252, 211, 77, 0.6);
 }
 
 .swap-button:active {
   transform: rotate(360deg) scale(0.95);
-  background: #323abd; /* more dark */
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+  background: #D97706;
+  box-shadow: 0 2px 10px rgba(252, 211, 77, 0.3);
 }
 
 /* Modal Enhancements */
@@ -573,7 +574,7 @@ body {
 .btn-modern:focus,
 .input-modern:focus,
 .select-modern:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline: 2px solid rgba(252, 211, 77, 0.5);
   outline-offset: 2px;
 }
 

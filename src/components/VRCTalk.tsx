@@ -910,12 +910,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
         <div className="flex items-center gap-3 justify-between">
           {/* Language pill */}
           <div className="flex items-center gap-2 text-xs">
-            <span className="inline-flex items-center gap-2 bg-white/5 text-white rounded-lg px-2 py-1">
-              <span className="font-semibold text-blue-300">
+            <span className="inline-flex items-center gap-2 bg-dark-800/50 text-white rounded-lg px-2 py-1 border border-accent-400/20">
+              <span className="font-semibold text-accent-300">
                 {langSource[findLangSourceIndex(sourceLanguage)]?.name || sourceLanguage}
               </span>
-              <span className="text-white/40">→</span>
-              <span className="font-semibold text-purple-300">
+              <span className="text-accent-200/60">→</span>
+              <span className="font-semibold text-accent-200">
                 {langTo[findLangToIndex(targetLanguage)]?.name || targetLanguage}
               </span>
             </span>
@@ -923,7 +923,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
 
           {/* Status chips */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-2 py-1">
+            <div className="flex items-center space-x-2 bg-dark-800/50 rounded-xl px-2 py-1 border border-accent-400/10">
               <div className="relative">
                 <div className={`status-dot ${micStatus === 'muted' ? 'status-warning' :
                     (micStatus === 'disconnected' || micStatus === 'error' || micStatus === 'initializing') ? 'status-inactive' :
@@ -931,7 +931,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
                   }`}></div>
                 {recognitionActive && detecting && <div className="mic-pulse" />}
               </div>
-              <span className="text-[11px] text-white/70 truncate max-w-[160px]" title={defaultMicrophone}>
+              <span className="text-[11px] text-dark-200 truncate max-w-[160px]" title={defaultMicrophone}>
                 {(() => {
                   switch (micStatus) {
                     case 'initializing': return 'Initializing…';
@@ -946,9 +946,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
                 })()}
               </span>
             </div>
-            <div className="flex items-center space-x-2 bg-white/5 rounded-xl px-2 py-1">
+            <div className="flex items-center space-x-2 bg-dark-800/50 rounded-xl px-2 py-1 border border-accent-400/10">
               <div className={`status-dot ${vrcMuted ? 'status-warning' : 'status-active'}`}></div>
-              <span className="text-[11px] text-white/70">{vrcMuted ? 'Muted' : 'Connected'}</span>
+              <span className="text-[11px] text-dark-200">{vrcMuted ? 'Muted' : 'Connected'}</span>
             </div>
           </div>
 
@@ -992,21 +992,21 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
                   <div className="flex items-center space-x-1">
                     {/* Whisper-specific status indicator */}
                     {whisperStatus && (
-                      <div className="flex items-center space-x-1 text-[10px] text-cyan-300">
-                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      <div className="flex items-center space-x-1 text-[10px] text-accent-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse" />
                         <span>{whisperStatus}</span>
                       </div>
                     )}
                     {/* WebSpeech status - only show if no Whisper status */}
                     {!whisperStatus && detecting && (
-                      <div className="flex items-center space-x-1 text-[10px] text-yellow-300">
-                        <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                      <div className="flex items-center space-x-1 text-[10px] text-accent-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse" />
                         <span>Listening</span>
                       </div>
                     )}
                     {isChangingLanguage && (
-                      <div className="flex items-center space-x-1 text-[10px] text-blue-300">
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      <div className="flex items-center space-x-1 text-[10px] text-accent-200">
+                        <div className="w-1.5 h-1.5 rounded-full bg-accent-300 animate-pulse" />
                         <span>Updating</span>
                       </div>
                     )}
@@ -1029,8 +1029,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="text-sm font-medium text-white">Translation</h4>
                     {translating && (
-                      <div className="flex items-center space-x-1 text-[10px] text-purple-300">
-                        <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                      <div className="flex items-center space-x-1 text-[10px] text-accent-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse" />
                         <span>Working</span>
                       </div>
                     )}
@@ -1059,7 +1059,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
             <h3 className="text-sm font-semibold text-white mb-3">Languages</h3>
             <div className="grid grid-cols-2 gap-2 items-end">
               <div>
-                <label className="block text-[10px] font-medium text-white/60 mb-1">Source</label>
+                <label className="block text-[10px] font-medium text-dark-300 mb-1">Source</label>
                 <select
                   value={sourceLanguage}
                   onChange={handleSourceLanguageChange}
@@ -1072,7 +1072,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-medium text-white/60 mb-1">Target</label>
+                <label className="block text-[10px] font-medium text-dark-300 mb-1">Target</label>
                 <select
                   value={targetLanguage}
                   onChange={handleTargetLanguageChange}
@@ -1105,7 +1105,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
             <div className="flex items-center space-x-2">
               <input
                 type="text"
-                className="flex-1 text-xs bg-white/5 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/40"
+                className="flex-1 text-xs bg-dark-800/50 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-dark-300 border border-accent-400/20"
                 placeholder="Type and press Enter…"
                 value={typedText}
                 onChange={e => setTypedText(e.target.value)}

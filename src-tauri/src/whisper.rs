@@ -245,10 +245,18 @@ fn detect_speech_activity(audio_samples: &[f32]) -> Result<bool, String> {
 
     println!("Audio analysis - RMS: {:.6}, Peak: {:.6}", rms, peak);
 
-    // Adjusted thresholds to balance sensitivity and false positives
-    // Higher thresholds reduce hallucinations from background noise
-    let rms_threshold = 0.01; // Increased to reduce noise detection
-    let peak_threshold = 0.05; // Increased to require clearer speech
+    // Check minimum audio duration (at least 0.5 seconds of actual audio)
+    // At 16kHz, 0.5 seconds = 8000 samples
+    let min_samples = 8000;
+    if audio_samples.len() < min_samples {
+        println!("Audio too short ({} samples, need at least {}), skipping", audio_samples.len(), min_samples);
+        return Ok(false);
+    }
+
+    // Higher thresholds to reduce sensitivity and false positives from background noise
+    // These values require clear, intentional speech to trigger transcription
+    let rms_threshold = 0.02; // Doubled from 0.01 - requires more energy
+    let peak_threshold = 0.1; // Doubled from 0.05 - requires clearer peaks
 
     let has_energy = rms > rms_threshold;
     let has_peaks = peak > peak_threshold;
@@ -279,15 +287,15 @@ fn detect_speech_activity(audio_samples: &[f32]) -> Result<bool, String> {
                 (sum_squares / (next_end - next_start) as f32).sqrt()
             };
 
-            if (segment_rms - next_segment_rms).abs() > 0.01 {
-                // Increased to require more variation (speech has more dynamic range)
+            if (segment_rms - next_segment_rms).abs() > 0.015 {
+                // Require significant variation - speech has dynamic range, noise is static
                 amplitude_changes += 1;
             }
         }
     }
 
-    // Require at least 2 amplitude changes to ensure it's dynamic speech, not static noise
-    let has_variation = amplitude_changes >= 2;
+    // Require at least 3 amplitude changes to ensure it's dynamic speech, not static noise
+    let has_variation = amplitude_changes >= 3;
 
     println!(
         "Speech detection - Energy: {}, Peaks: {}, Variation: {} changes",

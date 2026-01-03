@@ -279,14 +279,14 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       {/* Language Settings */}
       <div className="modern-card animate-slide-up">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-400 to-accent-500 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
             </svg>
           </div>
           <div>
             <h3 className="text-xl font-semibold text-white">Language Settings</h3>
-            <p className="text-white/60 text-sm">Configure source and target languages</p>
+            <p className="text-dark-200 text-sm">Configure source and target languages</p>
           </div>
         </div>
         
@@ -336,14 +336,14 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       {/* Speech Recognition Settings */}
       <div className="modern-card animate-slide-up animate-delay-100">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500 to-accent-600 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
             </svg>
           </div>
           <div>
             <h3 className="text-xl font-semibold text-white">Speech Recognition</h3>
-            <p className="text-white/60 text-sm">Choose your preferred speech recognition engine</p>
+            <p className="text-dark-200 text-sm">Choose your preferred speech recognition engine</p>
           </div>
         </div>
 
@@ -357,8 +357,8 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
               {/* WebSpeech Option */}
               <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
                 localConfig.recognizer === 'webspeech'
-                  ? 'bg-gradient-to-r from-blue-500/20 to-purple-600/20 border-2 border-blue-500/50'
-                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+                  ? 'bg-gradient-to-r from-accent-400/20 to-accent-500/20 border-2 border-accent-400/50'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
               }`}>
                 <input
                   type="radio"
@@ -370,12 +370,12 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 />
                 <div className="flex-1">
                   <div className="text-white font-medium">WebSpeech API</div>
-                  <div className="text-white/60 text-sm mt-1">
+                  <div className="text-dark-200 text-sm mt-1">
                     Browser-based, fast, requires internet
                   </div>
                 </div>
                 {localConfig.recognizer === 'webspeech' && (
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-accent-400 to-accent-500 flex items-center justify-center">
                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
@@ -386,8 +386,8 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
               {/* Whisper Option */}
               <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
                 localConfig.recognizer === 'whisper'
-                  ? 'bg-gradient-to-r from-green-500/20 to-teal-600/20 border-2 border-green-500/50'
-                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+                  ? 'bg-gradient-to-r from-accent-300/20 to-accent-400/20 border-2 border-accent-300/50'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
               }`}>
                 <input
                   type="radio"
@@ -399,12 +399,12 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 />
                 <div className="flex-1">
                   <div className="text-white font-medium">OpenAI Whisper</div>
-                  <div className="text-white/60 text-sm mt-1">
+                  <div className="text-dark-200 text-sm mt-1">
                     Local processing, works offline, high accuracy
                   </div>
                 </div>
                 {localConfig.recognizer === 'whisper' && (
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-green-500 to-teal-600 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-accent-300 to-accent-400 flex items-center justify-center">
                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
@@ -416,7 +416,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
 
           {/* Whisper Model Selection */}
           {localConfig.recognizer === 'whisper' && (
-            <div className="space-y-4 pt-4 border-t border-white/10">
+            <div className="space-y-4 pt-4 border-t border-accent-400/20">
               <div className="flex items-center justify-between">
                 <label className="block text-sm font-medium text-white/80">
                   Whisper Model
@@ -428,7 +428,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
 
               <div className="space-y-3">
                 {whisperModels.map((model) => (
-                  <div key={model.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+                  <div key={model.id} className="flex items-center justify-between p-4 bg-dark-800/30 rounded-xl border border-accent-400/10">
                     <div className="flex items-center space-x-4 flex-1">
                       {/* Model Selection Radio */}
                       <label className="flex items-center cursor-pointer">
@@ -444,8 +444,8 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                         <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
                           model.downloaded
                             ? (localConfig.whisper_model === model.id
-                                ? 'border-green-500 bg-green-500'
-                                : 'border-white/30 hover:border-green-500')
+                                ? 'border-accent-400 bg-accent-400'
+                                : 'border-dark-300 hover:border-accent-400')
                             : 'border-white/20 cursor-not-allowed'
                         }`}>
                           {localConfig.whisper_model === model.id && model.downloaded && (
@@ -457,12 +457,12 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                       {/* Model Info */}
                       <div className="flex-1">
                         <div className="flex items-center space-x-2">
-                          <span className={`font-medium ${model.downloaded ? 'text-white' : 'text-white/50'}`}>
+                          <span className={`font-medium ${model.downloaded ? 'text-white' : 'text-dark-300'}`}>
                             {model.name}
                           </span>
-                          <span className="text-xs text-white/40">({model.size})</span>
+                          <span className="text-xs text-dark-300">({model.size})</span>
                           {model.downloaded && (
-                            <div className="flex items-center space-x-1 text-xs text-green-400">
+                            <div className="flex items-center space-x-1 text-xs text-accent-300">
                               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                               </svg>
@@ -478,7 +478,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                     {!model.downloaded && (
                       <div className="flex flex-col items-end space-y-2">
                         {downloadingModels.has(model.id) && downloadProgress.has(model.id) && (
-                          <div className="text-xs text-white/70">
+                          <div className="text-xs text-dark-200">
                             {downloadProgress.get(model.id)}%
                           </div>
                         )}
@@ -487,7 +487,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                           disabled={downloadingModels.has(model.id)}
                           className={`btn-modern text-xs px-3 py-2 flex items-center space-x-2 ${
                             downloadingModels.has(model.id)
-                              ? 'bg-white/10 text-white/50 cursor-not-allowed'
+                              ? 'bg-dark-700/50 text-dark-300 cursor-not-allowed'
                               : 'btn-primary'
                           }`}
                         >
@@ -531,23 +531,23 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       {/* VRChat Settings */}
       <div className="modern-card animate-slide-up animate-delay-200">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-300 to-accent-500 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
             </svg>
           </div>
           <div>
             <h3 className="text-xl font-semibold text-white">VRChat Integration</h3>
-            <p className="text-white/60 text-sm">Configure VRChat-specific features</p>
+            <p className="text-dark-200 text-sm">Configure VRChat-specific features</p>
           </div>
         </div>
         
         <div className="space-y-6">
           {/* Disable when muted toggle */}
-          <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-dark-800/30 rounded-xl border border-accent-400/10">
             <div className="flex-1">
               <h4 className="text-white font-medium">Disable when muted</h4>
-              <p className="text-white/60 text-sm mt-1">
+              <p className="text-dark-200 text-sm mt-1">
                 Automatically pause translation when you're muted in VRChat
               </p>
             </div>
@@ -563,7 +563,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 })}
                 className="sr-only peer"
               />
-              <div className="relative w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-500 peer-checked:to-purple-600"></div>
+              <div className="relative w-11 h-6 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-500 peer-checked:to-purple-600"></div>
             </label>
           </div>
           
@@ -600,7 +600,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       {/* Advanced Settings */}
       <div className="modern-card animate-slide-up animate-delay-300">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-400 to-accent-600 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -608,7 +608,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
           </div>
           <div>
             <h3 className="text-xl font-semibold text-white">Advanced Settings</h3>
-            <p className="text-white/60 text-sm">Fine-tune your translation experience</p>
+            <p className="text-dark-200 text-sm">Fine-tune your translation experience</p>
           </div>
         </div>
         
@@ -621,8 +621,8 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
                 localConfig.mode === 0 
-                  ? 'bg-gradient-to-r from-blue-500/20 to-purple-600/20 border-2 border-blue-500/50' 
-                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+                  ? 'bg-gradient-to-r from-accent-400/20 to-accent-500/20 border-2 border-accent-400/50' 
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
               }`}>
                 <input
                   type="radio"
@@ -634,12 +634,12 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 />
                 <div className="flex-1">
                   <div className="text-white font-medium">Translation Mode</div>
-                  <div className="text-white/60 text-sm mt-1">
+                  <div className="text-dark-200 text-sm mt-1">
                     Translate speech and send to VRChat
                   </div>
                 </div>
                 {localConfig.mode === 0 && (
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-accent-400 to-accent-500 flex items-center justify-center">
                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
@@ -650,7 +650,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
               <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
                 localConfig.mode === 1 
                   ? 'bg-gradient-to-r from-green-500/20 to-blue-600/20 border-2 border-green-500/50' 
-                  : 'bg-white/5 border-2 border-transparent hover:bg-white/10'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
               }`}>
                 <input
                   type="radio"
@@ -662,12 +662,12 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 />
                 <div className="flex-1">
                   <div className="text-white font-medium">Transcription Mode</div>
-                  <div className="text-white/60 text-sm mt-1">
+                  <div className="text-dark-200 text-sm mt-1">
                     Send speech directly without translation
                   </div>
                 </div>
                 {localConfig.mode === 1 && (
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-green-500 to-blue-600 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-accent-300 to-accent-500 flex items-center justify-center">
                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
@@ -704,7 +704,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
         <div className="flex space-x-3">
           <button
             onClick={handleCancel}
-            className="btn-modern bg-white/10 hover:bg-white/20 text-white border border-white/20"
+            className="btn-modern bg-dark-800/50 hover:bg-dark-700 text-white border border-accent-400/30"
           >
             Cancel
           </button>
@@ -714,7 +714,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
             className={`btn-modern flex items-center space-x-2 ${
               hasChanges 
                 ? 'btn-success' 
-                : 'bg-white/10 text-white/50 cursor-not-allowed'
+                : 'bg-dark-700/50 text-dark-300 cursor-not-allowed'
             }`}
           >
             {isSaving ? (

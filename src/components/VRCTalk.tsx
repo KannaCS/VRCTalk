@@ -6,6 +6,7 @@ import { info, error } from '@tauri-apps/plugin-log';
 import { Recognizer } from '../recognizers/recognizer';
 import { WebSpeech } from '../recognizers/WebSpeech';
 import { Whisper } from '../recognizers/Whisper';
+import { SystemAudioRecognizer } from '../recognizers/SystemAudioRecognizer';
 import translateGT from '../translators/google_translate';
 import { Config, saveConfig } from '../utils/config';
 import { calculateMinWaitTime, langSource, langTo, findLangSourceIndex, findLangToIndex } from '../utils/constants';
@@ -137,9 +138,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
 
     // Check if we need to switch recognizer types
     const currentIsWhisper = globalSpeechRecognizer instanceof Whisper;
+    const currentIsSystemAudio = globalSpeechRecognizer instanceof SystemAudioRecognizer;
     const shouldBeWhisper = config.recognizer === 'whisper';
+    const shouldBeSystemAudio = config.recognizer === 'system_audio';
 
-    if (currentIsWhisper !== shouldBeWhisper) {
+    if (currentIsWhisper !== shouldBeWhisper || currentIsSystemAudio !== shouldBeSystemAudio) {
       info(`[SR] Recognizer type change detected: switching to ${config.recognizer}`);
 
       // Stop current recognizer
@@ -152,6 +155,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
       if (shouldBeWhisper) {
         newRecognizer = new Whisper(config.source_language, config.whisper_model, config.selected_microphone);
         info(`[SR] Switched to Whisper recognizer with model: ${config.whisper_model}`);
+      } else if (shouldBeSystemAudio) {
+        newRecognizer = new SystemAudioRecognizer(config.source_language);
+        info(`[SR] Switched to System Audio recognizer`);
       } else {
         newRecognizer = new WebSpeech(config.source_language, config.selected_microphone);
         info(`[SR] Switched to WebSpeech recognizer`);
@@ -592,6 +598,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     if (config.recognizer === 'whisper') {
       recognizer = new Whisper(config.source_language, config.whisper_model, config.selected_microphone);
       info(`[SR] Initializing Whisper recognizer with model: ${config.whisper_model}`);
+    } else if (config.recognizer === 'system_audio') {
+      recognizer = new SystemAudioRecognizer(config.source_language);
+      info(`[SR] Initializing System Audio recognizer`);
     } else {
       recognizer = new WebSpeech(config.source_language, config.selected_microphone);
       info(`[SR] Initializing WebSpeech recognizer`);

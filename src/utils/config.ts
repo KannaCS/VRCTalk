@@ -26,6 +26,10 @@ export type Config = {
     selected_microphone: string | null; // Device ID for selected microphone
     recognizer: string; // "webspeech" or "whisper"
     whisper_model: string; // Selected Whisper model ID
+    translator: string; // "google", "gemini", or "groq"
+    translation_style: string; // "casual", "formal", "polite", "friendly"
+    gemini_api_key: string; // Gemini API key for translation
+    groq_api_key: string; // Groq API key for translation
     language_settings: {
         omit_questionmark: boolean;
         gender_change: boolean;
@@ -92,6 +96,10 @@ export const DEFAULT_CONFIG: Config = {
     selected_microphone: null, // Default to system default microphone
     recognizer: "webspeech", // Default to WebSpeech
     whisper_model: "base", // Default Whisper model
+    translator: "google", // Default to Google Translate
+    translation_style: "casual", // Default translation style
+    gemini_api_key: "", // Empty by default
+    groq_api_key: "", // Empty by default
     language_settings: {
         omit_questionmark: true,
         gender_change: false,
@@ -185,6 +193,20 @@ export function validateConfig(config: Config): Config {
         validated.recognizer = config.recognizer;
     }
     if (config.whisper_model) validated.whisper_model = config.whisper_model;
+    
+    // Translator settings
+    if (config.translator && ['google', 'gemini', 'groq'].includes(config.translator)) {
+        validated.translator = config.translator;
+    }
+    if (config.translation_style && ['casual', 'formal', 'polite', 'friendly'].includes(config.translation_style)) {
+        validated.translation_style = config.translation_style;
+    }
+    if (typeof config.gemini_api_key === 'string') {
+        validated.gemini_api_key = config.gemini_api_key;
+    }
+    if (typeof config.groq_api_key === 'string') {
+        validated.groq_api_key = config.groq_api_key;
+    }
     
     // Language settings
     if (config.language_settings) {

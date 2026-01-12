@@ -527,6 +527,212 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
           )}
         </div>
       </div>
+
+      {/* Translation Settings */}
+      <div className="modern-card animate-slide-up animate-delay-150">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-white">Translation Engine</h3>
+            <p className="text-dark-200 text-sm">Choose your preferred translation provider</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {/* Translator Selection */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-white/80">
+              Translation Provider
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Google Translate Option */}
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.translator === 'google'
+                  ? 'bg-gradient-to-r from-emerald-400/20 to-teal-500/20 border-2 border-emerald-400/50'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
+              }`}>
+                <input
+                  type="radio"
+                  name="translator"
+                  value="google"
+                  checked={localConfig.translator === 'google'}
+                  onChange={(e) => updateLocalConfig({ translator: e.target.value })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">Google Translate</div>
+                  <div className="text-dark-200 text-sm mt-1">
+                    Free, fast, no API key required
+                  </div>
+                </div>
+                {localConfig.translator === 'google' && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
+
+              {/* Gemini Option */}
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.translator === 'gemini'
+                  ? 'bg-gradient-to-r from-blue-400/20 to-purple-500/20 border-2 border-blue-400/50'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
+              }`}>
+                <input
+                  type="radio"
+                  name="translator"
+                  value="gemini"
+                  checked={localConfig.translator === 'gemini'}
+                  onChange={(e) => updateLocalConfig({ translator: e.target.value })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">Gemini Flash</div>
+                  <div className="text-dark-200 text-sm mt-1">
+                    AI-powered, free tier, requires API key
+                  </div>
+                </div>
+                {localConfig.translator === 'gemini' && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
+
+              {/* Groq Option */}
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.translator === 'groq'
+                  ? 'bg-gradient-to-r from-orange-400/20 to-red-500/20 border-2 border-orange-400/50'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
+              }`}>
+                <input
+                  type="radio"
+                  name="translator"
+                  value="groq"
+                  checked={localConfig.translator === 'groq'}
+                  onChange={(e) => updateLocalConfig({ translator: e.target.value })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">Groq (Llama 3.3)</div>
+                  <div className="text-dark-200 text-sm mt-1">
+                    Fast, free tier, requires API key
+                  </div>
+                </div>
+                {localConfig.translator === 'groq' && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-orange-400 to-red-500 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
+
+          {/* Gemini API Key Input */}
+          {localConfig.translator === 'gemini' && (
+            <div className="space-y-4 pt-4 border-t border-blue-400/20">
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-white/80">
+                  Gemini API Key
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={localConfig.gemini_api_key}
+                    onChange={(e) => updateLocalConfig({ gemini_api_key: e.target.value })}
+                    placeholder="Enter your Gemini API key"
+                    className="w-full px-4 py-3 bg-dark-800/50 border border-blue-400/20 rounded-xl text-white placeholder-dark-300 focus:outline-none focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/20 transition-all"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-dark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                    </svg>
+                  </div>
+                </div>
+                {!localConfig.gemini_api_key && (
+                  <p className="text-yellow-400/80 text-xs flex items-center space-x-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <span>API key required for Gemini translation</span>
+                  </p>
+                )}
+              </div>
+
+              {/* API Key Info */}
+              <div className="text-xs text-white/50 bg-white/5 rounded-lg p-3">
+                <strong>How to get an API key:</strong> Visit{' '}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline"
+                >
+                  Google AI Studio
+                </a>{' '}
+                to create a free API key. Uses Gemini 1.5 Flash (free tier). New keys may take 1-2 minutes to activate.
+              </div>
+            </div>
+          )}
+
+          {/* Groq API Key Input */}
+          {localConfig.translator === 'groq' && (
+            <div className="space-y-4 pt-4 border-t border-orange-400/20">
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-white/80">
+                  Groq API Key
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={localConfig.groq_api_key}
+                    onChange={(e) => updateLocalConfig({ groq_api_key: e.target.value })}
+                    placeholder="Enter your Groq API key"
+                    className="w-full px-4 py-3 bg-dark-800/50 border border-orange-400/20 rounded-xl text-white placeholder-dark-300 focus:outline-none focus:border-orange-400/50 focus:ring-2 focus:ring-orange-400/20 transition-all"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-dark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                    </svg>
+                  </div>
+                </div>
+                {!localConfig.groq_api_key && (
+                  <p className="text-yellow-400/80 text-xs flex items-center space-x-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <span>API key required for Groq translation</span>
+                  </p>
+                )}
+              </div>
+
+              {/* API Key Info */}
+              <div className="text-xs text-white/50 bg-white/5 rounded-lg p-3">
+                <strong>How to get an API key:</strong> Visit{' '}
+                <a
+                  href="https://console.groq.com/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-400 hover:text-orange-300 underline"
+                >
+                  Groq Console
+                </a>{' '}
+                to create a free API key. Uses Llama 3.3 70B (free tier, very fast).
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* VRChat Settings */}
       <div className="modern-card animate-slide-up animate-delay-200">

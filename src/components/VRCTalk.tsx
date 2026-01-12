@@ -7,6 +7,8 @@ import { Recognizer } from '../recognizers/recognizer';
 import { WebSpeech } from '../recognizers/WebSpeech';
 import { Whisper } from '../recognizers/Whisper';
 import translateGT from '../translators/google_translate';
+import translateGemini from '../translators/gemini_translate';
+import translateGroq from '../translators/groq_translate';
 import { Config, saveConfig } from '../utils/config';
 import { calculateMinWaitTime, langSource, langTo, findLangSourceIndex, findLangToIndex } from '../utils/constants';
 
@@ -43,9 +45,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
   const [micStatus, setMicStatus] = useState<'initializing' | 'active' | 'listening' | 'muted' | 'disconnected' | 'error'>(
     'initializing'
   );
-  const [whisperStatus, setWhisperStatus] = useState<string>(""); // Status like "Listening...", "Processing..."
+  const [whisperStatus, setWhisperStatus] = useState<string>("");
   const firstResultRef = useRef(false);
-
+  const [styleDropdownOpen, setStyleDropdownOpen] = useState(false);
+  const styleDropdownRef = useRef<HTMLDivElement>(null);
 
   // Use global speech recognizer to prevent multiple instances
   const [sr, setSr] = useState<Recognizer | null>(globalSpeechRecognizer);
@@ -310,9 +313,17 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
           // Get translation
           let translatedResult = "";
           if (config.mode === 0) {
-            // Translation mode
-            translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
-            info("[TRANSLATION] Translation succeeded!");
+            // Translation mode - use selected translator
+            if (config.translator === 'gemini' && config.gemini_api_key) {
+              translatedResult = await translateGemini(text, sourceLanguage, targetLanguage, config.gemini_api_key, config.translation_style);
+              info("[TRANSLATION] Gemini translation succeeded!");
+            } else if (config.translator === 'groq' && config.groq_api_key) {
+              translatedResult = await translateGroq(text, sourceLanguage, targetLanguage, config.groq_api_key, config.translation_style);
+              info("[TRANSLATION] Groq translation succeeded!");
+            } else {
+              translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
+              info("[TRANSLATION] Google translation succeeded!");
+            }
           }
 
           // Apply gender changes if needed (only in translation mode)
@@ -864,6 +875,23 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
     };
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (styleDropdownRef.current && !styleDropdownRef.current.contains(event.target as Node)) {
+        setStyleDropdownOpen(false);
+      }
+    };
+
+    if (styleDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [styleDropdownOpen]);
+
   // Reflect network status into mic status
   useEffect(() => {
     const apply = () => {
@@ -952,12 +980,68 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
             </div>
           </div>
 
-          {/* Recognition toggle */}
-          <button
-            onClick={toggleRecognition}
-            className={`btn-modern flex items-center space-x-1 text-xs ${recognitionActive ? 'btn-danger' : 'btn-success'}`}
-            disabled={isChangingLanguage}
-          >
+          <div className="flex items-center space-x-2">
+            {/* Translation Style Selector (only for AI translators) */}
+            {(config.translator === 'gemini' || config.translator === 'groq') && (
+              <div className="relative" ref={styleDropdownRef}>
+                <button
+                  onClick={() => setStyleDropdownOpen(!styleDropdownOpen)}
+                  className="bg-gradient-to-br from-dark-700 to-dark-800 text-white rounded-xl px-4 py-2.5 pr-10 text-xs font-medium border-2 border-accent-400/20 hover:border-accent-400/40 focus:outline-none focus:border-accent-400/60 focus:ring-2 focus:ring-accent-400/20 shadow-lg shadow-black/30 transition-all cursor-pointer min-w-[110px] backdrop-blur-sm flex items-center justify-between"
+                  style={{ 
+                    height: '2.5rem',
+                    backgroundImage: 'linear-gradient(135deg, rgba(30, 30, 40, 0.95) 0%, rgba(20, 20, 30, 0.95) 100%)'
+                  }}
+                  title="Translation Style"
+                >
+                  <span className="capitalize">{config.translation_style}</span>
+                  <svg className={`w-4 h-4 text-accent-400/70 transition-transform duration-200 ${styleDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {/* Custom Dropdown Menu */}
+                {styleDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-dark-800/95 backdrop-blur-xl rounded-2xl border-2 border-accent-400/30 shadow-2xl shadow-black/50 overflow-hidden z-50 animate-slide-down">
+                    {[
+                      { value: 'casual', emoji: '💬', label: 'Casual' },
+                      { value: 'formal', emoji: '🎩', label: 'Formal' },
+                      { value: 'polite', emoji: '🙏', label: 'Polite' },
+                      { value: 'friendly', emoji: '😊', label: 'Friendly' }
+                    ].map((style, index) => (
+                      <button
+                        key={style.value}
+                        onClick={() => {
+                          const newConfig = { ...config, translation_style: style.value };
+                          setConfig(newConfig);
+                          saveConfig(newConfig).catch(err => error(`Error saving translation style: ${err}`));
+                          setStyleDropdownOpen(false);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-xs font-medium flex items-center space-x-2 transition-all ${
+                          config.translation_style === style.value 
+                            ? 'bg-gradient-to-r from-accent-400/20 to-accent-500/20 text-white' 
+                            : 'text-white/80 hover:bg-accent-400/10 hover:text-white'
+                        } ${index === 0 ? 'rounded-t-xl' : ''} ${index === 3 ? 'rounded-b-xl' : ''}`}
+                      >
+                        <span className="text-base">{style.emoji}</span>
+                        <span>{style.label}</span>
+                        {config.translation_style === style.value && (
+                          <svg className="w-3 h-3 ml-auto text-accent-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Recognition toggle */}
+            <button
+              onClick={toggleRecognition}
+              className={`btn-modern flex items-center space-x-1 text-xs ${recognitionActive ? 'btn-danger' : 'btn-success'}`}
+              disabled={isChangingLanguage}
+            >
             {recognitionActive ? (
               <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -976,6 +1060,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage }) =>
               </>
             )}
           </button>
+          </div>
         </div>
       </div>
 

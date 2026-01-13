@@ -33,14 +33,18 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://api.mymemory.translated.net https://huggingface.co https://translate.googleapis.com; media-src 'self' blob:;"
+      "csp": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://api.mymemory.translated.net https://huggingface.co https://translate.googleapis.com https://api.groq.com https://generativelanguage.googleapis.com; media-src 'self' blob:;"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/logo.png"
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ],
     "category": "Utility",
     "shortDescription": "Voice to Text Translation for VRChat",

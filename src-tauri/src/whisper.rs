@@ -181,7 +181,7 @@ fn run_inference_on_context(
     
     // Additional parameters to reduce hallucinations and improve quality
     params.set_suppress_blank(true); // Suppress blank outputs
-    params.set_suppress_non_speech_tokens(true); // Suppress non-speech tokens
+    params.set_suppress_nst(true); // Suppress non-speech tokens
     params.set_temperature(0.0); // Use greedy decoding (no randomness)
     params.set_no_context(true); // Don't use context to prevent hallucination continuation
     params.set_single_segment(false); // Allow multiple segments for better accuracy
@@ -197,14 +197,14 @@ fn run_inference_on_context(
         .map_err(|e| format!("Whisper inference failed: {:?}", e))?;
 
     // Collect transcription
-    let num_segments = state
-        .full_n_segments()
-        .map_err(|e| format!("Failed to get segments: {:?}", e))?;
+    let num_segments = state.full_n_segments();
 
     let mut transcription = String::new();
     for i in 0..num_segments {
-        if let Ok(segment) = state.full_get_segment_text(i) {
-            transcription.push_str(&segment);
+        if let Some(segment) = state.get_segment(i) {
+            if let Ok(text) = segment.to_str() {
+                transcription.push_str(text);
+            }
         }
     }
 
@@ -725,7 +725,7 @@ pub async fn whisper_transcribe(
         if needs_reload {
             println!("Loading Whisper model from disk...");
             println!("Path: {}", model_file_str);
-            let ctx = WhisperContext::new(&model_file_str)
+            let ctx = WhisperContext::new_with_params(&model_file_str, Default::default())
                 .map_err(|e| format!("Failed to create WhisperContext: {:?}", e))?;
             *guard = Some((ctx, model_clone.clone()));
             println!("Model '{}' loaded successfully and cached.", model_clone);

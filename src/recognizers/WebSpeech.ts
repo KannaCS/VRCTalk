@@ -17,6 +17,9 @@ export class WebSpeech extends Recognizer {
     resultCallback: ((result: string, final: boolean) => void) | null = null;
     private reconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 5;
+    private lastActivityTime: number = Date.now();
+    private healthCheckInterval: any = null;
+    private maxIdleTime: number = 30000; // 30 seconds
 
     constructor(lang: string, microphoneId: string | null = null) {
         super(lang);
@@ -47,11 +50,17 @@ export class WebSpeech extends Recognizer {
             this.recognition.onend = () => this.handleOnEnd();
             this.recognition.onnomatch = () => this.handleOnNoMatch();
             this.recognition.onerror = (e: { error?: string }) => this.handleOnError(e);
+            this.recognition.onstart = () => this.handleOnStart();
             
             // Re-attach the result callback if one was previously set
             if (this.resultCallback) {
                 this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
                     if (event.results.length > 0) {
+                        // Update activity time on every result
+                        this.lastActivityTime = Date.now();
+                        // Reset reconnect attempts on successful transcription
+                        this.reconnectAttempts = 0;
+                        
                         this.resultCallback!(
                             event.results[event.results.length - 1][0].transcript.trim(),
                             event.results[event.results.length - 1].isFinal
@@ -68,9 +77,18 @@ export class WebSpeech extends Recognizer {
         }
     }
 
+    private handleOnStart(): void {
+        info("[WEBSPEECH] Recognition started successfully");
+        this.lastActivityTime = Date.now();
+        this.reconnectAttempts = 0;
+    }
+
     private handleOnEnd(): void {
-        // Only try to restart if we're supposed to be running
-        if (this.running) {
+        // Always check if we should be running, regardless of this.running state
+        // This handles cases where recognition stops due to timeout/idle
+        const shouldBeRunning = this.running;
+        
+        if (shouldBeRunning) {
             info("[WEBSPEECH] Recognition ended unexpectedly. Restarting...");
             
             // Use exponential backoff for reconnection attempts
@@ -175,6 +193,12 @@ export class WebSpeech extends Recognizer {
 
     async start(): Promise<void> {
         this.running = true;
+        this.lastActivityTime = Date.now();
+        this.reconnectAttempts = 0;
+        
+        // Start health check
+        this.startHealthCheck();
+        
         try {
             // If a specific microphone is selected, set it as the audio source
             if (this.selectedMicrophoneId) {
@@ -206,6 +230,10 @@ export class WebSpeech extends Recognizer {
 
     stop(): void {
         this.running = false;
+        
+        // Stop health check
+        this.stopHealthCheck();
+        
         try {
             this.recognition.stop();
             
@@ -438,11 +466,74 @@ export class WebSpeech extends Recognizer {
         
         this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
             if (event.results.length > 0) {
+                // Update activity time and reset reconnect attempts on every result
+                this.lastActivityTime = Date.now();
+                this.reconnectAttempts = 0;
+                
                 callback(
                     event.results[event.results.length - 1][0].transcript.trim(),
                     event.results[event.results.length - 1].isFinal
                 );
             }
         };
+    }
+
+    private startHealthCheck(): void {
+        // Clear any existing health check
+        this.stopHealthCheck();
+        
+        // Check every 10 seconds if recognition is still active
+        this.healthCheckInterval = setInterval(() => {
+            if (!this.running) {
+                // If we're not supposed to be running, stop the health check
+                this.stopHealthCheck();
+                return;
+            }
+            
+            const timeSinceLastActivity = Date.now() - this.lastActivityTime;
+            
+            // If recognition has been idle for too long, restart it
+            if (timeSinceLastActivity > this.maxIdleTime) {
+                info(`[WEBSPEECH] Health check: Recognition idle for ${timeSinceLastActivity}ms. Restarting...`);
+                this.lastActivityTime = Date.now();
+                
+                try {
+                    // Try to stop and restart
+                    this.recognition.stop();
+                    setTimeout(() => {
+                        if (this.running) {
+                            try {
+                                this.recognition.start();
+                                info("[WEBSPEECH] Health check: Recognition restarted successfully");
+                            } catch (err: unknown) {
+                                const errorMessage = err instanceof Error ? err.message : String(err);
+                                error(`[WEBSPEECH] Health check: Failed to restart: ${errorMessage}`);
+                                
+                                // If restart fails, try reinitializing
+                                this.initRecognition();
+                                setTimeout(() => {
+                                    if (this.running) {
+                                        this.recognition.start();
+                                    }
+                                }, 500);
+                            }
+                        }
+                    }, 500);
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : String(err);
+                    error(`[WEBSPEECH] Health check: Error during restart: ${errorMessage}`);
+                }
+            }
+        }, 10000); // Check every 10 seconds
+        
+        info("[WEBSPEECH] Health check started");
+    }
+
+    private stopHealthCheck(): void {
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+            this.healthCheckInterval = null;
+            info("[WEBSPEECH] Health check stopped");
+        }
     }
 } 

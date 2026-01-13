@@ -3,6 +3,7 @@ import { loadConfig, Config } from '../utils/config';
 import VRCTalk from './VRCTalk';
 import Settings from './Settings';
 import { info, error } from '@tauri-apps/plugin-log';
+import logo from '../assets/logo.png';
 
 // Message record type for history
 type MessageItem = { src: string; tgt: string; time: number };
@@ -75,7 +76,7 @@ const App: React.FC = () => {
             <div className="flex justify-center mb-8">
               <div className="relative">
                 <div className="w-20 h-20 rounded-2xl bg-accent-400/20 backdrop-blur-sm flex items-center justify-center animate-pulse-soft">
-                  <img src="/src/assets/logo.png" alt="VRCTalk Logo" className="w-12 h-12 object-contain" />
+                  <img src={logo} alt="VRCTalk Logo" className="w-12 h-12 object-contain" />
                 </div>
                 
                 {/* Pulsing Rings */}
@@ -136,7 +137,7 @@ const App: React.FC = () => {
             {/* Logo and Title */}
             <div className="flex items-center space-x-4 animate-slide-down">
               <div className="w-12 h-12 flex items-center justify-center">
-                <img src="/src/assets/logo.png" alt="VRCTalk Logo" className="w-10 h-10 object-contain" />
+                <img src={logo} alt="VRCTalk Logo" className="w-10 h-10 object-contain" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">

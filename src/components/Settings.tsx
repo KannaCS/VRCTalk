@@ -411,6 +411,35 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                   </div>
                 )}
               </label>
+
+              {/* System Audio Option */}
+              <label className={`relative flex items-center p-4 rounded-xl cursor-pointer transition-all duration-300 ${
+                localConfig.recognizer === 'system_audio'
+                  ? 'bg-gradient-to-r from-purple-500/20 to-purple-600/20 border-2 border-purple-500/50'
+                  : 'bg-dark-800/30 border-2 border-transparent hover:bg-dark-800/50'
+              }`}>
+                <input
+                  type="radio"
+                  name="recognizer"
+                  value="system_audio"
+                  checked={localConfig.recognizer === 'system_audio'}
+                  onChange={(e) => updateLocalConfig({ recognizer: e.target.value })}
+                  className="sr-only"
+                />
+                <div className="flex-1">
+                  <div className="text-white font-medium">System Audio</div>
+                  <div className="text-dark-200 text-sm mt-1">
+                    Capture and transcribe system audio output
+                  </div>
+                </div>
+                {localConfig.recognizer === 'system_audio' && (
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </label>
             </div>
           </div>
 
@@ -506,7 +535,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                           ) : (
                             <>
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-7 7m0 0a7 7 0 1114 0m-4 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
                               </svg>
                               <span>Download</span>
                             </>

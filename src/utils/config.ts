@@ -24,7 +24,7 @@ export type Config = {
     target_language: string;
     mode: number;    // 0 = translation, 1 = transcription only
     selected_microphone: string | null; // Device ID for selected microphone
-    recognizer: string; // "webspeech" or "whisper"
+    recognizer: "webspeech" | "whisper" | "system_audio"; 
     whisper_model: string; // Selected Whisper model ID
     translator: string; // "google", "gemini", or "groq"
     translation_style: string; // "casual", "formal", "polite", "friendly"
@@ -189,7 +189,7 @@ export function validateConfig(config: Config): Config {
     validated.selected_microphone = null;
     
     // Recognizer settings
-    if (config.recognizer && ['webspeech', 'whisper'].includes(config.recognizer)) {
+    if (config.recognizer && ['webspeech', 'whisper', 'system_audio'].includes(config.recognizer)) {
         validated.recognizer = config.recognizer;
     }
     if (config.whisper_model) validated.whisper_model = config.whisper_model;

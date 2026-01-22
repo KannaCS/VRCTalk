@@ -14,10 +14,10 @@
     "windows": [
       {
         "title": "VRCTalk - Voice Translation for VRChat",
-        "width": 900,
-        "height": 700,
-        "minWidth": 600,
-        "minHeight": 500,
+        "width": 1050,
+        "height": 720,
+        "minWidth": 1050,
+        "minHeight": 720,
         "center": true,
         "resizable": true,
         "decorations": true,
@@ -48,7 +48,16 @@
     ],
     "category": "Utility",
     "shortDescription": "Voice to Text Translation for VRChat",
-    "longDescription": "VRCTalk provides real-time voice translation for VRChat users, supporting multiple languages and speech recognition methods including Web Speech API and Whisper AI models."
+    "longDescription": "VRCTalk provides real-time voice translation for VRChat users, supporting multiple languages and speech recognition methods including Web Speech API and Whisper AI models.",
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "installerHooks": "nsis/installer-hooks.nsi"
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
   },
   "plugins": {
     "fs": {

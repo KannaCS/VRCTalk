@@ -30,6 +30,8 @@ export type Config = {
     translation_style: string; // "casual", "formal", "polite", "friendly"
     gemini_api_key: string; // Gemini API key for translation
     groq_api_key: string; // Groq API key for translation
+    layout: string; // "default" or "horizontal"
+    theme_color: string; // "blue", "purple", "green", "orange", "pink", "red"
     language_settings: {
         omit_questionmark: boolean;
         gender_change: boolean;
@@ -100,6 +102,8 @@ export const DEFAULT_CONFIG: Config = {
     translation_style: "casual", // Default translation style
     gemini_api_key: "", // Empty by default
     groq_api_key: "", // Empty by default
+    layout: "default", // Default layout
+    theme_color: "blue", // Default theme color
     language_settings: {
         omit_questionmark: true,
         gender_change: false,
@@ -206,6 +210,14 @@ export function validateConfig(config: Config): Config {
     }
     if (typeof config.groq_api_key === 'string') {
         validated.groq_api_key = config.groq_api_key;
+    }
+    
+    // Appearance settings
+    if (config.layout && ['default', 'horizontal'].includes(config.layout)) {
+        validated.layout = config.layout;
+    }
+    if (config.theme_color && ['blue', 'purple', 'green', 'orange', 'pink', 'red'].includes(config.theme_color)) {
+        validated.theme_color = config.theme_color;
     }
     
     // Language settings

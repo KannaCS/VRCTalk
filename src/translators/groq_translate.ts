@@ -1,4 +1,5 @@
-import { error, info } from '@tauri-apps/plugin-log';
+import { error, info, warn } from '@tauri-apps/plugin-log';
+import { groqKeyManager } from '../utils/groq_key_manager';
 
 // Language code mapping for more natural language names
 const languageNames: Record<string, string> = {
@@ -30,133 +31,190 @@ function getLanguageName(code: string): string {
     return languageNames[code] || code;
 }
 
-export default async function translateGroq(
+// Maximum number of key fallback attempts
+const MAX_FALLBACK_ATTEMPTS = 5;
+
+/**
+ * Make a single translation request with a specific API key
+ */
+async function makeTranslationRequest(
     text: string,
-    source: string,
-    target: string,
+    sourceLang: string,
+    targetLang: string,
     apiKey: string,
-    style: string = 'casual'
-): Promise<string> {
-    try {
-        // Validate API key
-        if (!apiKey || apiKey.trim() === '') {
-            throw new Error('Groq API key is not configured');
-        }
-
-        // Skip translation if source and target languages are the same
-        if (source === target || source.startsWith(target + '-')) {
-            return text;
-        }
-
-        // Handle source language with region code (e.g., 'en-US' -> 'en')
-        const sourceBase = source.includes('-') ? source.split('-')[0] : source;
-        
-        // If source base language is the same as target, no need to translate
-        if (sourceBase === target) {
-            return text;
-        }
-
-        const sourceLang = getLanguageName(source);
-        const targetLang = getLanguageName(target);
-
-        // Build style instruction
-        const styleInstructions: Record<string, string> = {
-            'casual': 'Keep the tone casual and natural, as if talking to a friend.',
-            'formal': 'Use formal and professional language, appropriate for business or official contexts.',
-            'polite': 'Use polite and respectful language, with appropriate honorifics where applicable.',
-            'friendly': 'Use warm and friendly language, showing enthusiasm and positivity.'
-        };
-        const styleInstruction = styleInstructions[style] || styleInstructions['casual'];
-
-        // Build the prompt for translation
-        const prompt = `Translate the following text from ${sourceLang} to ${targetLang}. ${styleInstruction} Only provide the translation, no explanations or additional text.
+    styleInstruction: string
+): Promise<{ success: boolean; result?: string; isRateLimited?: boolean; retryAfter?: number; error?: string }> {
+    const prompt = `Translate the following text from ${sourceLang} to ${targetLang}. ${styleInstruction} Only provide the translation, no explanations or additional text.
 
 Text to translate: "${text}"
 
 Translation:`;
 
-        // Groq API endpoint
-        const url = `https://api.groq.com/openai/v1/chat/completions`;
+    const url = `https://api.groq.com/openai/v1/chat/completions`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        // Set a timeout for the fetch request
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "llama-3.3-70b-versatile",
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a professional translator. Provide only the translation without any explanations or additional text."
+                    },
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: 1024,
+            }),
+            signal: controller.signal
+        });
 
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model: "llama-3.3-70b-versatile",
-                    messages: [
-                        {
-                            role: "system",
-                            content: "You are a professional translator. Provide only the translation without any explanations or additional text."
-                        },
-                        {
-                            role: "user",
-                            content: prompt
-                        }
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 1024,
-                }),
-                signal: controller.signal
-            });
+        clearTimeout(timeoutId);
 
-            clearTimeout(timeoutId);
-
-            // Check if response is ok
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const errorMsg = errorData?.error?.message || `HTTP error! Status: ${response.status}`;
-                throw new Error(errorMsg);
-            }
-
-            const data = await response.json();
-
-            // Validate response data
-            if (!data || !data.choices || data.choices.length === 0) {
-                throw new Error('Invalid translation response structure');
-            }
-
-            // Extract the translation from the response
-            const choice = data.choices[0];
-            if (!choice.message || !choice.message.content) {
-                throw new Error('No translation content in response');
-            }
-
-            let translatedText = choice.message.content.trim();
-            
-            // Clean up the response - remove quotes if present
-            if ((translatedText.startsWith('"') && translatedText.endsWith('"')) ||
-                (translatedText.startsWith("'") && translatedText.endsWith("'"))) {
-                translatedText = translatedText.slice(1, -1);
-            }
-
-            // If we got an empty result but had input text, something went wrong
-            if (translatedText.trim() === '' && text.trim() !== '') {
-                throw new Error('Empty translation result');
-            }
-
-            info(`[GROQ] Translation successful: "${text}" -> "${translatedText}"`);
-            return translatedText;
-
-        } catch (fetchError: unknown) {
-            // Handle fetch-specific errors
-            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-                throw new Error('Translation request timed out');
-            }
-            throw fetchError;
+        // Check for rate limit (429)
+        if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('retry-after') || '60', 10);
+            return { success: false, isRateLimited: true, retryAfter };
         }
-    } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        error(`[GROQ] Error: ${errorMessage}`);
-        
-        // Return original text with error indication as fallback
-        return `${text} (translation failed: ${errorMessage})`;
+
+        // Check for other errors
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMsg = errorData?.error?.message || `HTTP error! Status: ${response.status}`;
+            return { success: false, error: errorMsg };
+        }
+
+        const data = await response.json();
+
+        // Validate response
+        if (!data?.choices?.length || !data.choices[0]?.message?.content) {
+            return { success: false, error: 'Invalid translation response structure' };
+        }
+
+        let translatedText = data.choices[0].message.content.trim();
+
+        // Clean up quotes
+        if ((translatedText.startsWith('"') && translatedText.endsWith('"')) ||
+            (translatedText.startsWith("'") && translatedText.endsWith("'"))) {
+            translatedText = translatedText.slice(1, -1);
+        }
+
+        if (translatedText.trim() === '' && text.trim() !== '') {
+            return { success: false, error: 'Empty translation result' };
+        }
+
+        return { success: true, result: translatedText };
+
+    } catch (fetchError: unknown) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+            return { success: false, error: 'Translation request timed out' };
+        }
+        return { success: false, error: fetchError instanceof Error ? fetchError.message : String(fetchError) };
     }
+}
+
+/**
+ * Translate text using Groq API with automatic key fallback
+ * @param text Text to translate
+ * @param source Source language code
+ * @param target Target language code
+ * @param userApiKey Optional user-provided API key (takes priority over built-in keys)
+ * @param style Translation style
+ */
+export default async function translateGroq(
+    text: string,
+    source: string,
+    target: string,
+    userApiKey: string = '',
+    style: string = 'casual'
+): Promise<string> {
+    // Skip translation if source and target languages are the same
+    if (source === target || source.startsWith(target + '-')) {
+        return text;
+    }
+
+    const sourceBase = source.includes('-') ? source.split('-')[0] : source;
+    if (sourceBase === target) {
+        return text;
+    }
+
+    const sourceLang = getLanguageName(source);
+    const targetLang = getLanguageName(target);
+
+    const styleInstructions: Record<string, string> = {
+        'casual': 'Keep the tone casual and natural, as if talking to a friend.',
+        'formal': 'Use formal and professional language, appropriate for business or official contexts.',
+        'polite': 'Use polite and respectful language, with appropriate honorifics where applicable.',
+        'friendly': 'Use warm and friendly language, showing enthusiasm and positivity.'
+    };
+    const styleInstruction = styleInstructions[style] || styleInstructions['casual'];
+
+    let lastError = '';
+    let attempts = 0;
+    const triedKeys = new Set<string>();
+
+    while (attempts < MAX_FALLBACK_ATTEMPTS) {
+        // Get an available API key (user key takes priority)
+        const apiKey = groqKeyManager.getAvailableKey(userApiKey || undefined);
+
+        if (!apiKey) {
+            error('[GROQ] No API keys available');
+            return `${text} (translation failed: No API keys available)`;
+        }
+
+        // Skip if we already tried this key (prevents infinite loop with single key)
+        if (triedKeys.has(apiKey) && !userApiKey) {
+            warn('[GROQ] All available keys have been tried');
+            break;
+        }
+        triedKeys.add(apiKey);
+
+        info(`[GROQ] Attempting translation (attempt ${attempts + 1}/${MAX_FALLBACK_ATTEMPTS})`);
+
+        const result = await makeTranslationRequest(text, sourceLang, targetLang, apiKey, styleInstruction);
+
+        if (result.success && result.result) {
+            groqKeyManager.markKeySuccess(apiKey);
+            info(`[GROQ] Translation successful: "${text}" -> "${result.result}"`);
+            return result.result;
+        }
+
+        if (result.isRateLimited) {
+            groqKeyManager.markKeyRateLimited(apiKey, result.retryAfter);
+            warn(`[GROQ] Key rate limited, attempting fallback...`);
+            
+            // If this was a user key, we can't fallback
+            if (userApiKey && apiKey === userApiKey) {
+                // Try built-in keys as fallback
+                const builtinKey = groqKeyManager.getAvailableKey();
+                if (builtinKey) {
+                    info('[GROQ] User key rate limited, falling back to built-in keys');
+                    userApiKey = ''; // Clear user key to use built-in
+                } else {
+                    lastError = 'API key rate limited, please try again later';
+                    break;
+                }
+            }
+        } else {
+            groqKeyManager.markKeyFailed(apiKey);
+            lastError = result.error || 'Unknown error';
+            warn(`[GROQ] Translation failed: ${lastError}`);
+        }
+
+        attempts++;
+    }
+
+    error(`[GROQ] All translation attempts failed: ${lastError}`);
+    return `${text} (translation failed: ${lastError})`;
 }

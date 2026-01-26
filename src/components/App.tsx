@@ -206,7 +206,7 @@ const App: React.FC = () => {
                 <h1 className="text-xl font-bold text-white">
                   VRC<span className="text-accent-300">Talk</span>
                 </h1>
-                <p className="text-dark-200 text-xs">Voice Translation for VRChat</p>
+                <p className="text-dark-200 text-xs">Voice Translation</p>
               </div>
             </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { info, error } from '@tauri-apps/plugin-log';
+import { info, error, warn } from '@tauri-apps/plugin-log';
 
 import { Recognizer } from '../recognizers/recognizer';
 import { WebSpeech } from '../recognizers/WebSpeech';
@@ -30,6 +30,49 @@ let lock = false;
 // Global speech recognition instance to prevent multiple instances
 let globalSpeechRecognizer: Recognizer | null = null;
 let globalSRInitialized = false;
+
+// Translation retry configuration
+const TRANSLATION_RETRY_DELAY_MS = 2000;  // Wait 2 seconds between retry iterations
+const TRANSLATION_TIMEOUT_MS = 30000;     // Give up after 30 seconds
+
+/**
+ * Validates if a translation result is valid or an error response
+ * @param result The translation result to validate
+ * @param originalText The original text that was translated
+ * @param sourceLanguage The source language code
+ * @param targetLanguage The target language code
+ * @returns true if the translation is valid, false if it's an error response
+ */
+function isValidTranslation(
+  result: string,
+  originalText: string,
+  sourceLanguage: string,
+  targetLanguage: string
+): boolean {
+  // Check for error pattern in result
+  if (result.includes('(translation failed:')) {
+    return false;
+  }
+
+  // Check for empty or whitespace-only result
+  if (!result || result.trim() === '') {
+    return false;
+  }
+
+  // Check if result is unchanged from original text when languages differ
+  // This indicates the translation likely failed
+  if (result === originalText && sourceLanguage !== targetLanguage) {
+    // Also check base language codes (e.g., 'en' vs 'en-US')
+    const sourceBase = sourceLanguage.includes('-') ? sourceLanguage.split('-')[0] : sourceLanguage;
+    const targetBase = targetLanguage.includes('-') ? targetLanguage.split('-')[0] : targetLanguage;
+    
+    if (sourceBase !== targetBase) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHistoryToggle }) => {
   const [detecting, setDetecting] = useState(false);
@@ -317,122 +360,172 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         // Continue anyway, as this is not critical
       }
 
-      let attempts = 3;
-      while (attempts > 0) {
-        info(`[TRANSLATION] Attempt ${4 - attempts}`);
-        try {
-          setTranslating(true);
+      // Start timeout tracking
+      const startTime = Date.now();
+      let validationRetryCount = 0;
+      let finalTranslation = "";
+      let translationSucceeded = false;
 
-          // Get translation
-          let translatedResult = "";
-          if (config.mode === 0) {
-            // Translation mode - use selected translator
-            if (config.translator === 'gemini' && config.gemini_api_key) {
-              translatedResult = await translateGemini(text, sourceLanguage, targetLanguage, config.gemini_api_key, config.translation_style);
-              info("[TRANSLATION] Gemini translation succeeded!");
-            } else if (config.translator === 'groq') {
-              // Groq works with or without user API key (has built-in keys with fallback)
-              translatedResult = await translateGroq(text, sourceLanguage, targetLanguage, config.groq_api_key || '', config.translation_style);
-              info("[TRANSLATION] Groq translation succeeded!");
-            } else {
-              translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
-              info("[TRANSLATION] Google translation succeeded!");
-            }
-          }
-
-          // Apply gender changes if needed (only in translation mode)
-          let finalTranslation = translatedResult;
-          if (config.language_settings.gender_change && targetLanguage === "en") {
-            info("[TRANSLATION] Applying gender changes...");
-
-            if (config.language_settings.gender_change_type === 0) {
-              // Make masculine
-              finalTranslation = finalTranslation.replace(/\bshe\b/g, "he")
-                .replace(/\bShe\b/g, "He")
-                .replace(/\bher\b/g, "him")
-                .replace(/\bHer\b/g, "Him");
-            } else {
-              // Make feminine
-              finalTranslation = finalTranslation.replace(/\bhe\b/g, "she")
-                .replace(/\bHe\b/g, "She")
-                .replace(/\bhis\b/g, "her")
-                .replace(/\bHis\b/g, "Her")
-                .replace(/\bhim\b/g, "her")
-                .replace(/\bHim\b/g, "Her")
-                .replace(/\bhe's\b/g, "she's")
-                .replace(/\bHe's\b/g, "She's");
-            }
-          }
-
-          if (config.mode === 0) {
-            setTranslatedText(finalTranslation);
-          } else {
-            setTranslatedText("");
-          }
+      // Outer retry loop for validation failures
+      while (!translationSucceeded) {
+        // Check if we've exceeded the timeout
+        const elapsedTime = Date.now() - startTime;
+        if (elapsedTime >= TRANSLATION_TIMEOUT_MS) {
+          error(`[TRANSLATION] Translation timeout after ${elapsedTime}ms for text: "${text}"`);
+          warn(`[TRANSLATION] Skipping message due to persistent translation failure`);
+          lock = false;
           setTranslating(false);
+          return;
+        }
 
-          // Send to VRChat
-          info("[TRANSLATION] Sending message to VRChat chatbox");
-          const originalText = sourceLanguage === "ja" && config.language_settings.omit_questionmark
-            ? text.replace(/？/g, "")
-            : text;
-
-          let messageFormat = originalText; // default for transcription
-
-          if (config.mode === 0) {
-            // Build translation message
-            const divider = ' | ';
-            const srcTag = `[${getLangTag(sourceLanguage)}]`;
-            const tgtTag = `[${getLangTag(targetLanguage)}]`;
-
-            messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
-
-            if (config.vrchat_settings.only_translation) {
-              messageFormat = `${finalTranslation} ${tgtTag}`;
-            } else if (config.vrchat_settings.translation_first) {
-              messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
-            }
-          }
-
+        let attempts = 3;
+        let translatedResult = "";
+        
+        while (attempts > 0) {
+          info(`[TRANSLATION] Attempt ${4 - attempts}`);
           try {
-            await invoke("send_message", {
-              address: config.vrchat_settings.osc_address,
-              port: `${config.vrchat_settings.osc_port}`,
-              msg: messageFormat
-            });
+            setTranslating(true);
 
-            // Push to history callback
-            if (onNewMessage) {
-              onNewMessage(originalText, finalTranslation);
+            // Get translation
+            if (config.mode === 0) {
+              // Translation mode - use selected translator
+              if (config.translator === 'gemini' && config.gemini_api_key) {
+                translatedResult = await translateGemini(text, sourceLanguage, targetLanguage, config.gemini_api_key, config.translation_style);
+                info("[TRANSLATION] Gemini translation succeeded!");
+              } else if (config.translator === 'groq') {
+                // Groq works with or without user API key (has built-in keys with fallback)
+                translatedResult = await translateGroq(text, sourceLanguage, targetLanguage, config.groq_api_key || '', config.translation_style);
+                info("[TRANSLATION] Groq translation succeeded!");
+              } else {
+                translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
+                info("[TRANSLATION] Google translation succeeded!");
+              }
             }
 
+            // Validate the translation result
+            if (!isValidTranslation(translatedResult, text, sourceLanguage, targetLanguage)) {
+              // Log the validation failure
+              if (translatedResult.includes('(translation failed:')) {
+                error(`[TRANSLATION] Error pattern detected in result: ${translatedResult}`);
+              } else if (!translatedResult || translatedResult.trim() === '') {
+                error(`[TRANSLATION] Empty or null translation result detected`);
+              } else if (translatedResult === text) {
+                error(`[TRANSLATION] Unchanged translation detected (result matches original text)`);
+              }
+              
+              // Break out of inner loop to retry with validation delay
+              attempts = 0;
+              break;
+            }
 
-            // Wait for chatbox to process
-            await new Promise(r => setTimeout(r, calculateMinWaitTime(
-              finalTranslation,
-              config.vrchat_settings.chatbox_update_speed
-            )));
-          } catch (sendError) {
-            error(`[TRANSLATION] Error sending message to VRChat: ${sendError}`);
-            // Continue anyway, we've already done the translation
+            // Apply gender changes if needed (only in translation mode)
+            finalTranslation = translatedResult;
+            if (config.language_settings.gender_change && targetLanguage === "en") {
+              info("[TRANSLATION] Applying gender changes...");
+
+              if (config.language_settings.gender_change_type === 0) {
+                // Make masculine
+                finalTranslation = finalTranslation.replace(/\bshe\b/g, "he")
+                  .replace(/\bShe\b/g, "He")
+                  .replace(/\bher\b/g, "him")
+                  .replace(/\bHer\b/g, "Him");
+              } else {
+                // Make feminine
+                finalTranslation = finalTranslation.replace(/\bhe\b/g, "she")
+                  .replace(/\bHe\b/g, "She")
+                  .replace(/\bhis\b/g, "her")
+                  .replace(/\bHis\b/g, "Her")
+                  .replace(/\bhim\b/g, "her")
+                  .replace(/\bHim\b/g, "Her")
+                  .replace(/\bhe's\b/g, "she's")
+                  .replace(/\bHe's\b/g, "She's");
+              }
+            }
+
+            // Translation is valid, mark as succeeded
+            translationSucceeded = true;
+            attempts = 0;
+          } catch (e) {
+            error(`[TRANSLATION] Error during translation: ${e}`);
+            attempts--;
+
+            // Always reset translating state on error
+            setTranslating(false);
+
+            // If we're out of attempts, break to outer retry loop
+            if (attempts <= 0) {
+              break;
+            }
           }
 
-          attempts = 0;
-        } catch (e) {
-          error(`[TRANSLATION] Error during translation: ${e}`);
-          attempts--;
+          if (attempts <= 0) break;
+        }
 
-          // Always reset translating state on error
-          setTranslating(false);
+        // If translation didn't succeed, wait before retrying
+        if (!translationSucceeded) {
+          validationRetryCount++;
+          info(`[TRANSLATION] Validation retry ${validationRetryCount} - waiting ${TRANSLATION_RETRY_DELAY_MS}ms before next attempt`);
+          await new Promise(r => setTimeout(r, TRANSLATION_RETRY_DELAY_MS));
+        }
+      }
 
-          // If we're out of attempts, still need to unlock
-          if (attempts <= 0) {
-            lock = false;
-            return;
+      // Only send to VRChat if we have a valid translation
+      if (translationSucceeded && finalTranslation) {
+        if (validationRetryCount > 0) {
+          info(`[TRANSLATION] Valid translation received after ${validationRetryCount} validation retries`);
+        }
+
+        if (config.mode === 0) {
+          setTranslatedText(finalTranslation);
+        } else {
+          setTranslatedText("");
+        }
+        setTranslating(false);
+
+        // Send to VRChat
+        info("[TRANSLATION] Sending message to VRChat chatbox");
+        const originalText = sourceLanguage === "ja" && config.language_settings.omit_questionmark
+          ? text.replace(/？/g, "")
+          : text;
+
+        let messageFormat = originalText; // default for transcription
+
+        if (config.mode === 0) {
+          // Build translation message
+          const divider = ' | ';
+          const srcTag = `[${getLangTag(sourceLanguage)}]`;
+          const tgtTag = `[${getLangTag(targetLanguage)}]`;
+
+          messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
+
+          if (config.vrchat_settings.only_translation) {
+            messageFormat = `${finalTranslation} ${tgtTag}`;
+          } else if (config.vrchat_settings.translation_first) {
+            messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
           }
         }
 
-        if (attempts <= 0) break;
+        try {
+          await invoke("send_message", {
+            address: config.vrchat_settings.osc_address,
+            port: `${config.vrchat_settings.osc_port}`,
+            msg: messageFormat
+          });
+
+          // Push to history callback
+          if (onNewMessage) {
+            onNewMessage(originalText, finalTranslation);
+          }
+
+          // Wait for chatbox to process
+          await new Promise(r => setTimeout(r, calculateMinWaitTime(
+            finalTranslation,
+            config.vrchat_settings.chatbox_update_speed
+          )));
+        } catch (sendError) {
+          error(`[TRANSLATION] Error sending message to VRChat: ${sendError}`);
+          // Continue anyway, we've already done the translation
+        }
       }
 
       lock = false;

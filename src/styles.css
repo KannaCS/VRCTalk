@@ -1466,14 +1466,23 @@ body {
 
 .settings-row-info {
   @apply flex-1 pr-4;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .settings-row-title {
   @apply text-sm font-medium text-white;
+  user-select: text;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .settings-row-description {
   @apply text-xs text-white/50 mt-0.5;
+  user-select: text;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 /* Settings Toggle Switch */
@@ -1521,6 +1530,10 @@ body {
   background-position: right 12px center;
   background-size: 16px;
   padding-right: 40px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: text;
 }
 
 .settings-select:hover {
@@ -1537,6 +1550,8 @@ body {
   background: #1e293b;
   color: white;
   padding: 8px;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 /* Settings Grid for side-by-side dropdowns */

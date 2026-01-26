@@ -22,6 +22,22 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
   const [activeSection, setActiveSection] = useState<SettingsSection>('language');
 
+  // Dropdown states
+  const [sourceLanguageDropdownOpen, setSourceLanguageDropdownOpen] = useState(false);
+  const [targetLanguageDropdownOpen, setTargetLanguageDropdownOpen] = useState(false);
+  const [recognizerDropdownOpen, setRecognizerDropdownOpen] = useState(false);
+  const [whisperModelDropdownOpen, setWhisperModelDropdownOpen] = useState(false);
+  const [translatorDropdownOpen, setTranslatorDropdownOpen] = useState(false);
+  const [speedDropdownOpen, setSpeedDropdownOpen] = useState(false);
+
+  // Dropdown refs
+  const sourceLanguageDropdownRef = useRef<HTMLDivElement>(null);
+  const targetLanguageDropdownRef = useRef<HTMLDivElement>(null);
+  const recognizerDropdownRef = useRef<HTMLDivElement>(null);
+  const whisperModelDropdownRef = useRef<HTMLDivElement>(null);
+  const translatorDropdownRef = useRef<HTMLDivElement>(null);
+  const speedDropdownRef = useRef<HTMLDivElement>(null);
+
   const hasChangesRef = useRef(hasChanges);
   const latestConfigRef = useRef(localConfig);
 
@@ -30,6 +46,35 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     hasChangesRef.current = hasChanges;
     latestConfigRef.current = localConfig;
   }, [hasChanges, localConfig]);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sourceLanguageDropdownRef.current && !sourceLanguageDropdownRef.current.contains(event.target as Node)) {
+        setSourceLanguageDropdownOpen(false);
+      }
+      if (targetLanguageDropdownRef.current && !targetLanguageDropdownRef.current.contains(event.target as Node)) {
+        setTargetLanguageDropdownOpen(false);
+      }
+      if (recognizerDropdownRef.current && !recognizerDropdownRef.current.contains(event.target as Node)) {
+        setRecognizerDropdownOpen(false);
+      }
+      if (whisperModelDropdownRef.current && !whisperModelDropdownRef.current.contains(event.target as Node)) {
+        setWhisperModelDropdownOpen(false);
+      }
+      if (translatorDropdownRef.current && !translatorDropdownRef.current.contains(event.target as Node)) {
+        setTranslatorDropdownOpen(false);
+      }
+      if (speedDropdownRef.current && !speedDropdownRef.current.contains(event.target as Node)) {
+        setSpeedDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Update local config when the parent config changes
   useEffect(() => {
@@ -181,6 +226,40 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
     });
   };
 
+  // Language options
+  const sourceLanguageOptions = [
+    { code: 'en-US', name: 'English (United States)' },
+    { code: 'ja-JP', name: 'Japanese' },
+    { code: 'ko-KR', name: 'Korean' },
+    { code: 'zh-CN', name: 'Chinese (Simplified)' },
+    { code: 'es-ES', name: 'Spanish (Spain)' },
+    { code: 'fr-FR', name: 'French' },
+    { code: 'de-DE', name: 'German' },
+    { code: 'ru-RU', name: 'Russian' },
+  ];
+
+  const targetLanguageOptions = [
+    { code: 'ja', name: 'Japanese' },
+    { code: 'en', name: 'English' },
+    { code: 'ko', name: 'Korean' },
+    { code: 'zh-CN', name: 'Chinese (Simplified)' },
+    { code: 'es', name: 'Spanish' },
+    { code: 'fr', name: 'French' },
+    { code: 'de', name: 'German' },
+    { code: 'ru', name: 'Russian' },
+  ];
+
+  const recognizerOptions = [
+    { value: 'webspeech', label: 'WebSpeech API' },
+    { value: 'whisper', label: 'OpenAI Whisper' },
+  ];
+
+  const translatorOptions = [
+    { value: 'google', label: 'Google Translate' },
+    { value: 'gemini', label: 'Gemini Flash' },
+    { value: 'groq', label: 'Groq (Llama 3.3)' },
+  ];
+
 
 
 
@@ -325,29 +404,69 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
               <div className="settings-grid-2">
                 <div className="settings-field">
                   <label className="settings-label">Default Source Language</label>
-                  <select value={localConfig.source_language} onChange={(e) => updateLocalConfig({ source_language: e.target.value })} className="settings-select">
-                    <option value="en-US">English (United States)</option>
-                    <option value="ja-JP">Japanese</option>
-                    <option value="ko-KR">Korean</option>
-                    <option value="zh-CN">Chinese (Simplified)</option>
-                    <option value="es-ES">Spanish (Spain)</option>
-                    <option value="fr-FR">French</option>
-                    <option value="de-DE">German</option>
-                    <option value="ru-RU">Russian</option>
-                  </select>
+                  <div className="relative" ref={sourceLanguageDropdownRef}>
+                    <button
+                      onClick={() => setSourceLanguageDropdownOpen(!sourceLanguageDropdownOpen)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                    >
+                      <span>{sourceLanguageOptions.find(l => l.code === localConfig.source_language)?.name || localConfig.source_language}</span>
+                      <svg className={`w-4 h-4 transition-transform ${sourceLanguageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {sourceLanguageDropdownOpen && (
+                      <div className="absolute top-full left-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                        {sourceLanguageOptions.map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              updateLocalConfig({ source_language: lang.code });
+                              setSourceLanguageDropdownOpen(false);
+                            }}
+                            className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${localConfig.source_language === lang.code
+                              ? 'bg-accent-400/20 text-white font-medium'
+                              : 'text-white/80 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            {lang.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="settings-field">
                   <label className="settings-label">Default Target Language</label>
-                  <select value={localConfig.target_language} onChange={(e) => updateLocalConfig({ target_language: e.target.value })} className="settings-select">
-                    <option value="ja">Japanese</option>
-                    <option value="en">English</option>
-                    <option value="ko">Korean</option>
-                    <option value="zh-CN">Chinese (Simplified)</option>
-                    <option value="es">Spanish</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="ru">Russian</option>
-                  </select>
+                  <div className="relative" ref={targetLanguageDropdownRef}>
+                    <button
+                      onClick={() => setTargetLanguageDropdownOpen(!targetLanguageDropdownOpen)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                    >
+                      <span>{targetLanguageOptions.find(l => l.code === localConfig.target_language)?.name || localConfig.target_language}</span>
+                      <svg className={`w-4 h-4 transition-transform ${targetLanguageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {targetLanguageDropdownOpen && (
+                      <div className="absolute top-full left-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                        {targetLanguageOptions.map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              updateLocalConfig({ target_language: lang.code });
+                              setTargetLanguageDropdownOpen(false);
+                            }}
+                            className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${localConfig.target_language === lang.code
+                              ? 'bg-accent-400/20 text-white font-medium'
+                              : 'text-white/80 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            {lang.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -371,10 +490,36 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                   <div className="settings-row-title">Recognition Engine</div>
                   <div className="settings-row-description">WebSpeech (online) or Whisper (offline, higher accuracy)</div>
                 </div>
-                <select value={localConfig.recognizer} onChange={(e) => updateLocalConfig({ recognizer: e.target.value })} className="settings-select" style={{ width: '160px' }}>
-                  <option value="webspeech">WebSpeech API</option>
-                  <option value="whisper">OpenAI Whisper</option>
-                </select>
+                <div className="relative" ref={recognizerDropdownRef} style={{ width: '200px' }}>
+                  <button
+                    onClick={() => setRecognizerDropdownOpen(!recognizerDropdownOpen)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                  >
+                    <span>{recognizerOptions.find(r => r.value === localConfig.recognizer)?.label || localConfig.recognizer}</span>
+                    <svg className={`w-4 h-4 transition-transform ${recognizerDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {recognizerDropdownOpen && (
+                    <div className="absolute top-full right-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                      {recognizerOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => {
+                            updateLocalConfig({ recognizer: option.value });
+                            setRecognizerDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${localConfig.recognizer === option.value
+                            ? 'bg-accent-400/20 text-white font-medium'
+                            : 'text-white/80 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               {localConfig.recognizer === 'whisper' && (
                 <div className="settings-row">
@@ -382,13 +527,41 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                     <div className="settings-row-title">Whisper Model</div>
                     <div className="settings-row-description">Larger models = better accuracy, slower speed</div>
                   </div>
-                  <select value={localConfig.whisper_model} onChange={(e) => updateLocalConfig({ whisper_model: e.target.value })} className="settings-select" style={{ width: '160px' }}>
-                    {whisperModels.map((model) => (
-                      <option key={model.id} value={model.id} disabled={!model.downloaded}>
-                        {model.name} {model.downloaded ? '' : '(Download)'}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative" ref={whisperModelDropdownRef} style={{ width: '200px' }}>
+                    <button
+                      onClick={() => setWhisperModelDropdownOpen(!whisperModelDropdownOpen)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                    >
+                      <span>{whisperModels.find(m => m.id === localConfig.whisper_model)?.name || localConfig.whisper_model}</span>
+                      <svg className={`w-4 h-4 transition-transform ${whisperModelDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {whisperModelDropdownOpen && (
+                      <div className="absolute top-full right-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                        {whisperModels.map((model) => (
+                          <button
+                            key={model.id}
+                            onClick={() => {
+                              if (model.downloaded) {
+                                updateLocalConfig({ whisper_model: model.id });
+                                setWhisperModelDropdownOpen(false);
+                              }
+                            }}
+                            disabled={!model.downloaded}
+                            className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${localConfig.whisper_model === model.id
+                              ? 'bg-accent-400/20 text-white font-medium'
+                              : model.downloaded
+                                ? 'text-white/80 hover:bg-white/10 hover:text-white'
+                                : 'text-white/30 cursor-not-allowed'
+                            }`}
+                          >
+                            {model.name} {!model.downloaded && '(Download)'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {localConfig.recognizer === 'whisper' && (
@@ -422,11 +595,36 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                   <div className="settings-row-title">Translation Provider</div>
                   <div className="settings-row-description">Google (free), Gemini or Groq (AI-powered, needs API key)</div>
                 </div>
-                <select value={localConfig.translator} onChange={(e) => updateLocalConfig({ translator: e.target.value })} className="settings-select" style={{ width: '160px' }}>
-                  <option value="google">Google Translate</option>
-                  <option value="gemini">Gemini Flash</option>
-                  <option value="groq">Groq (Llama 3.3)</option>
-                </select>
+                <div className="relative" ref={translatorDropdownRef} style={{ width: '200px' }}>
+                  <button
+                    onClick={() => setTranslatorDropdownOpen(!translatorDropdownOpen)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                  >
+                    <span>{translatorOptions.find(t => t.value === localConfig.translator)?.label || localConfig.translator}</span>
+                    <svg className={`w-4 h-4 transition-transform ${translatorDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {translatorDropdownOpen && (
+                    <div className="absolute top-full right-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                      {translatorOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => {
+                            updateLocalConfig({ translator: option.value });
+                            setTranslatorDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${localConfig.translator === option.value
+                            ? 'bg-accent-400/20 text-white font-medium'
+                            : 'text-white/80 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               {localConfig.translator === 'gemini' && (
                 <div className="settings-row">
@@ -487,11 +685,38 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                   <div className="settings-row-title">Chatbox Update Speed</div>
                   <div className="settings-row-description">How quickly messages appear in VRChat</div>
                 </div>
-                <select value={String(localConfig.vrchat_settings.chatbox_update_speed)} onChange={(e) => updateLocalConfig({ vrchat_settings: { ...localConfig.vrchat_settings, chatbox_update_speed: Number(e.target.value) } })} className="settings-select" style={{ width: '140px' }}>
-                  {Object.entries(speed_presets).map(([key, value]) => (
-                    <option key={key} value={String(value)}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
-                  ))}
-                </select>
+                <div className="relative" ref={speedDropdownRef} style={{ width: '160px' }}>
+                  <button
+                    onClick={() => setSpeedDropdownOpen(!speedDropdownOpen)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                  >
+                    <span className="capitalize">
+                      {Object.entries(speed_presets).find(([_, value]) => value === localConfig.vrchat_settings.chatbox_update_speed)?.[0] || 'Custom'}
+                    </span>
+                    <svg className={`w-4 h-4 transition-transform ${speedDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {speedDropdownOpen && (
+                    <div className="absolute top-full right-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                      {Object.entries(speed_presets).map(([key, value]) => (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            updateLocalConfig({ vrchat_settings: { ...localConfig.vrchat_settings, chatbox_update_speed: value } });
+                            setSpeedDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl capitalize ${localConfig.vrchat_settings.chatbox_update_speed === value
+                            ? 'bg-accent-400/20 text-white font-medium'
+                            : 'text-white/80 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          {key}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </section>

@@ -20,6 +20,7 @@ export type WhisperModel = {
 };
 
 export type Config = {
+    onboarding_completed: boolean; // Whether first-time setup has been completed
     source_language: string;
     target_language: string;
     mode: number;    // 0 = translation, 1 = transcription only
@@ -92,13 +93,14 @@ export const WHISPER_MODELS: WhisperModel[] = [
 ];
 
 export const DEFAULT_CONFIG: Config = {
+    onboarding_completed: false, // First-time users need to complete onboarding
     source_language: "en-US",
     target_language: "ja",
     mode: 0,
     selected_microphone: null, // Default to system default microphone
     recognizer: "webspeech", // Default to WebSpeech
     whisper_model: "base", // Default Whisper model
-    translator: "google", // Default to Google Translate
+    translator: "groq", // Default to Groq for translation
     translation_style: "casual", // Default translation style
     gemini_api_key: "", // Empty by default
     groq_api_key: "", // Empty by default
@@ -184,6 +186,11 @@ export async function saveConfig(config: Config): Promise<void> {
 
 export function validateConfig(config: Config): Config {
     const validated = { ...DEFAULT_CONFIG };
+    
+    // Onboarding flag
+    if (typeof config.onboarding_completed === 'boolean') {
+        validated.onboarding_completed = config.onboarding_completed;
+    }
     
     // Copy valid values from the provided config
     if (config.source_language) validated.source_language = config.source_language;

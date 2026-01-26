@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { loadConfig, Config } from '../utils/config';
 import VRCTalk from './VRCTalk';
 import Settings from './Settings';
+import Onboarding from './Onboarding';
 import { info, error } from '@tauri-apps/plugin-log';
 import logo from '../assets/logo.png';
 
@@ -14,12 +15,18 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<MessageItem[]>([]);
   const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
 
   useEffect(() => {
     const initConfig = async () => {
       try {
         const loadedConfig = await loadConfig();
         setConfig(loadedConfig);
+        // Check if onboarding needs to be shown
+        if (!loadedConfig.onboarding_completed) {
+          setShowOnboarding(true);
+          info('[APP] First-time user detected, showing onboarding');
+        }
         info('[APP] Configuration loaded successfully');
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -31,6 +38,12 @@ const App: React.FC = () => {
 
     initConfig();
   }, []);
+
+  // Handle onboarding completion
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+    info('[APP] Onboarding completed');
+  };
 
   // Handle settings dialog open/close with logging
   const handleSettingsToggle = () => {
@@ -111,6 +124,17 @@ const App: React.FC = () => {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // If showing onboarding, render the onboarding flow
+  if (showOnboarding) {
+    return (
+      <Onboarding
+        config={config}
+        setConfig={setConfig}
+        onComplete={handleOnboardingComplete}
+      />
     );
   }
 

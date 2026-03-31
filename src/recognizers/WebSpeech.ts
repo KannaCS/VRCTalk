@@ -200,26 +200,13 @@ export class WebSpeech extends Recognizer {
         this.startHealthCheck();
         
         try {
-            // If a specific microphone is selected, set it as the audio source
-            if (this.selectedMicrophoneId) {
-                try {
-                    // First, we need to get access to the microphone to ensure permissions
-                    const constraints: MediaStreamConstraints = {
-                        audio: { deviceId: this.selectedMicrophoneId ? { exact: this.selectedMicrophoneId } : undefined }
-                    };
-                    
-                    this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
-                    info(`[WEBSPEECH] Using specific microphone: ${this.selectedMicrophoneId}`);
-                } catch (err: unknown) {
-                    const errorMessage = err instanceof Error ? err.message : String(err);
-                    error(`[WEBSPEECH] Error accessing specific microphone: ${errorMessage}. Falling back to default.`);
-                    this.selectedMicrophoneId = null;
-                }
-            }
+            // Note: Web Speech API always uses the browser/system default microphone
+            // There is no way to programmatically select a specific device
+            // Users must change their system default input device in Windows Sound Settings
             
-            // Start recognition
+            // Start recognition (uses system default mic)
             this.recognition.start();
-            info("[WEBSPEECH] Recognition started!");
+            info("[WEBSPEECH] Recognition started using system default microphone");
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
             error(`[WEBSPEECH] Error starting recognition: ${errorMessage}`);
@@ -259,19 +246,30 @@ export class WebSpeech extends Recognizer {
     restart(): void {
         info("[WEBSPEECH] Forcing restart of recognition");
         const wasRunning = this.running;
+        const currentMicId = this.selectedMicrophoneId;
         
         try {
-            // First stop and clean up any existing resources
-            this.stop();
-            
-            // Reset state
-            this.reconnectAttempts = 0;
+            // First, aggressively clean up ALL audio resources
             this.running = false;
+            this.reconnectAttempts = 0;
             
-            // Ensure any audio resources are properly cleaned up
+            // Stop health check immediately
+            this.stopHealthCheck();
+            
+            // Stop the recognition API
+            try {
+                this.recognition.stop();
+            } catch (e) {
+                // Ignore errors when stopping - it might already be stopped
+            }
+            
+            // Clean up audio streams completely
             if (this.audioStream) {
                 const tracks = this.audioStream.getTracks();
-                tracks.forEach(track => track.stop());
+                tracks.forEach(track => {
+                    track.stop();
+                    info(`[WEBSPEECH] Stopped audio track: ${track.label || track.id}`);
+                });
                 this.audioStream = null;
             }
             
@@ -280,41 +278,40 @@ export class WebSpeech extends Recognizer {
                 this.audioContext = null;
             }
             
-            // Reinitialize the recognition object to ensure a clean slate
-            info("[WEBSPEECH] Reinitializing recognition object during restart");
-            this.initRecognition();
+            // Force garbage collection of old mic by clearing reference
+            this.selectedMicrophoneId = null;
             
-            // Then start after a delay if it was running
-            if (wasRunning) {
-                this.running = true;
-                setTimeout(() => {
-                    try {
-                        info("[WEBSPEECH] Starting recognition after restart");
-                        this.start();
-                    } catch (err: unknown) {
-                        const errorMessage = err instanceof Error ? err.message : String(err);
-                        error(`[WEBSPEECH] Error starting recognition after restart: ${errorMessage}`);
-                        
-                        // One final attempt with a longer delay
-                        setTimeout(() => {
-                            try {
-                                info("[WEBSPEECH] Final attempt to start recognition");
-                                this.start();
-                            } catch (finalErr: unknown) {
-                                const finalErrorMsg = finalErr instanceof Error ? finalErr.message : String(finalErr);
-                                error(`[WEBSPEECH] Final restart attempt failed: ${finalErrorMsg}`);
-                                this.running = false;
-                            }
-                        }, 1000);
-                    }
-                }, 500);
-            }
+            // Wait a moment for browser to release the old device
+            setTimeout(() => {
+                // Restore mic selection
+                this.selectedMicrophoneId = currentMicId;
+                
+                // Reinitialize the recognition object with fresh settings
+                info("[WEBSPEECH] Reinitializing recognition object during restart");
+                this.initRecognition();
+                
+                // Start if it was running before
+                if (wasRunning) {
+                    this.running = true;
+                    setTimeout(() => {
+                        try {
+                            info("[WEBSPEECH] Starting recognition after restart");
+                            this.start();
+                        } catch (err: unknown) {
+                            const errorMessage = err instanceof Error ? err.message : String(err);
+                            error(`[WEBSPEECH] Error starting recognition after restart: ${errorMessage}`);
+                            this.running = false;
+                        }
+                    }, 300);
+                }
+            }, 200);
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
             error(`[WEBSPEECH] Error during restart: ${errorMessage}`);
             
             // Attempt recovery
             this.reconnectAttempts = 0;
+            this.selectedMicrophoneId = currentMicId;
             this.initRecognition();
             
             if (wasRunning) {

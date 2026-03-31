@@ -658,6 +658,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     // One-time permission unlock to reveal device labels and devicechange hook
     let deviceChangeHandler: any;
     let fallbackTimeout: any;
+    let deviceChangeTimeout: any;
+    let lastDefaultDeviceId: string | null = null;
+    
     const initMedia = async () => {
       try {
         // Ask for audio permission once; then stop tracks immediately
@@ -683,6 +686,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
               const micName = match ? match[1] : label;
               setDefaultMicrophone(micName);
             }
+            
+            // Track the default device ID
+            if (!config.selected_microphone) {
+              lastDefaultDeviceId = audioInputs[0]?.deviceId || null;
+            }
           }
         } catch (_) {
           // ignore
@@ -693,6 +701,48 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
       deviceChangeHandler = async () => {
         await refreshDevices();
+        
+        // Debounce device changes to prevent restart loops
+        if (deviceChangeTimeout) {
+          clearTimeout(deviceChangeTimeout);
+        }
+        
+        deviceChangeTimeout = setTimeout(async () => {
+          // Restart recognition when any audio device changes
+          if (globalSpeechRecognizer && globalSpeechRecognizer.status()) {
+            try {
+              const devices = await navigator.mediaDevices.enumerateDevices();
+              const audioInputs = devices.filter(d => d.kind === 'audioinput');
+              
+              if (audioInputs.length > 0) {
+                const currentDefaultId = audioInputs[0].deviceId;
+                
+                // Only restart if the default device actually changed
+                if (lastDefaultDeviceId && currentDefaultId !== lastDefaultDeviceId) {
+                  info(`[DEVICE] Default microphone changed from ${lastDefaultDeviceId.substring(0, 8)}... to ${currentDefaultId.substring(0, 8)}..., restarting recognition`);
+                  lastDefaultDeviceId = currentDefaultId;
+                  
+                  // If no specific mic is selected, restart to use new default
+                  if (!config.selected_microphone) {
+                    globalSpeechRecognizer.restart();
+                  } else {
+                    // If specific mic was selected, check if it still exists
+                    const selectedStillExists = audioInputs.find(d => d.deviceId === config.selected_microphone);
+                    if (!selectedStillExists) {
+                      info(`[DEVICE] Selected microphone no longer available, switching to default`);
+                      globalSpeechRecognizer.set_microphone(null);
+                    }
+                  }
+                } else if (!lastDefaultDeviceId) {
+                  // Initialize tracking if not set
+                  lastDefaultDeviceId = currentDefaultId;
+                }
+              }
+            } catch (err) {
+              error(`[DEVICE] Error handling device change: ${err}`);
+            }
+          }
+        }, 1000); // Wait 1 second after last device change event
       };
       navigator.mediaDevices.addEventListener?.('devicechange', deviceChangeHandler);
 
@@ -792,6 +842,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         try { navigator.mediaDevices.removeEventListener?.('devicechange', deviceChangeHandler); } catch { }
       }
       if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      if (deviceChangeTimeout) clearTimeout(deviceChangeTimeout);
 
       // Don't destroy the global speech recognizer, just stop it temporarily
       if (sr && sr === globalSpeechRecognizer) {

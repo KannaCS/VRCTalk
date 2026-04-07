@@ -86,6 +86,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
+  const [secondaryTranslatedText, setSecondaryTranslatedText] = useState("");
   const [defaultMicrophone, setDefaultMicrophone] = useState("Initializing...");
 
   const [triggerUpdate, setTriggerUpdate] = useState(false);
@@ -103,8 +104,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   const styleDropdownRef = useRef<HTMLDivElement>(null);
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
   const [targetDropdownOpen, setTargetDropdownOpen] = useState(false);
+  const [secondaryTargetDropdownOpen, setSecondaryTargetDropdownOpen] = useState(false);
   const sourceDropdownRef = useRef<HTMLDivElement>(null);
   const targetDropdownRef = useRef<HTMLDivElement>(null);
+  const secondaryTargetDropdownRef = useRef<HTMLDivElement>(null);
 
   // Use global speech recognizer to prevent multiple instances
   const [sr, setSr] = useState<Recognizer | null>(globalSpeechRecognizer);
@@ -136,7 +139,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     });
 
     // Log language change details
-    info(`[LANGUAGE] Language change detected: source=${prevSourceLang}->${sourceLanguage}, target=${prevTargetLang}->${targetLanguage}`);
+    info(`[LANGUAGE] Language change detected: source=${prevSourceLang}->${sourceLanguage}, target=${prevTargetLang}->${targetLanguage}, secondary=${config.secondary_target_language || 'none'}`);
 
     if (sr) {
       // Only handle source language changes here, as that affects speech recognition
@@ -146,6 +149,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         // Provide visual feedback that language change is in progress
         setSourceText("");
         setTranslatedText("");
+        setSecondaryTranslatedText("");
         setDetecting(false);
         setIsChangingLanguage(true);
 
@@ -364,6 +368,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
       const startTime = Date.now();
       let validationRetryCount = 0;
       let finalTranslation = "";
+      let secondaryTranslatedResult = "";
       let translationSucceeded = false;
 
       // Outer retry loop for validation failures
@@ -391,31 +396,57 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
               // Translation mode - use selected translator
               if (config.translator === 'gemini' && config.gemini_api_key) {
                 translatedResult = await translateGemini(text, sourceLanguage, targetLanguage, config.gemini_api_key, config.translation_style);
-                info("[TRANSLATION] Gemini translation succeeded!");
+                info("[TRANSLATION] Gemini primary translation succeeded!");
+                
+                // Translate to secondary language if enabled
+                if (config.secondary_target_language) {
+                  secondaryTranslatedResult = await translateGemini(text, sourceLanguage, config.secondary_target_language, config.gemini_api_key, config.translation_style);
+                  info("[TRANSLATION] Gemini secondary translation succeeded!");
+                }
               } else if (config.translator === 'groq') {
                 // Groq works with or without user API key (has built-in keys with fallback)
                 translatedResult = await translateGroq(text, sourceLanguage, targetLanguage, config.groq_api_key || '', config.translation_style);
-                info("[TRANSLATION] Groq translation succeeded!");
+                info("[TRANSLATION] Groq primary translation succeeded!");
+                
+                // Translate to secondary language if enabled
+                if (config.secondary_target_language) {
+                  secondaryTranslatedResult = await translateGroq(text, sourceLanguage, config.secondary_target_language, config.groq_api_key || '', config.translation_style);
+                  info("[TRANSLATION] Groq secondary translation succeeded!");
+                }
               } else {
                 translatedResult = await translateGT(text, sourceLanguage, targetLanguage);
-                info("[TRANSLATION] Google translation succeeded!");
+                info("[TRANSLATION] Google primary translation succeeded!");
+                
+                // Translate to secondary language if enabled
+                if (config.secondary_target_language) {
+                  secondaryTranslatedResult = await translateGT(text, sourceLanguage, config.secondary_target_language);
+                  info("[TRANSLATION] Google secondary translation succeeded!");
+                }
               }
             }
 
-            // Validate the translation result
+            // Validate the primary translation result
             if (!isValidTranslation(translatedResult, text, sourceLanguage, targetLanguage)) {
               // Log the validation failure
               if (translatedResult.includes('(translation failed:')) {
-                error(`[TRANSLATION] Error pattern detected in result: ${translatedResult}`);
+                error(`[TRANSLATION] Error pattern detected in primary result: ${translatedResult}`);
               } else if (!translatedResult || translatedResult.trim() === '') {
-                error(`[TRANSLATION] Empty or null translation result detected`);
+                error(`[TRANSLATION] Empty or null primary translation result detected`);
               } else if (translatedResult === text) {
-                error(`[TRANSLATION] Unchanged translation detected (result matches original text)`);
+                error(`[TRANSLATION] Unchanged primary translation detected (result matches original text)`);
               }
               
               // Break out of inner loop to retry with validation delay
               attempts = 0;
               break;
+            }
+            
+            // Validate secondary translation if it exists
+            if (config.secondary_target_language && secondaryTranslatedResult) {
+              if (!isValidTranslation(secondaryTranslatedResult, text, sourceLanguage, config.secondary_target_language)) {
+                error(`[TRANSLATION] Secondary translation validation failed, but continuing with primary`);
+                secondaryTranslatedResult = ""; // Clear invalid secondary translation
+              }
             }
 
             // Apply gender changes if needed (only in translation mode)
@@ -477,8 +508,15 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
         if (config.mode === 0) {
           setTranslatedText(finalTranslation);
+          // Set secondary translation if available
+          if (config.secondary_target_language && secondaryTranslatedResult) {
+            setSecondaryTranslatedText(secondaryTranslatedResult);
+          } else {
+            setSecondaryTranslatedText("");
+          }
         } else {
           setTranslatedText("");
+          setSecondaryTranslatedText("");
         }
         setTranslating(false);
 
@@ -495,13 +533,27 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
           const divider = ' | ';
           const srcTag = `[${getLangTag(sourceLanguage)}]`;
           const tgtTag = `[${getLangTag(targetLanguage)}]`;
+          
+          // Check if we have a secondary translation
+          if (config.secondary_target_language && secondaryTranslatedResult) {
+            const secondaryTgtTag = `[${getLangTag(config.secondary_target_language)}]`;
+            
+            if (config.vrchat_settings.only_translation) {
+              messageFormat = `${finalTranslation} ${tgtTag}${divider}${secondaryTranslatedResult} ${secondaryTgtTag}`;
+            } else if (config.vrchat_settings.translation_first) {
+              messageFormat = `${tgtTag} ${finalTranslation}${divider}${secondaryTgtTag} ${secondaryTranslatedResult}${divider}${originalText} ${srcTag}`;
+            } else {
+              messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}${divider}${secondaryTranslatedResult} ${secondaryTgtTag}`;
+            }
+          } else {
+            // Single translation format (original behavior)
+            messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
 
-          messageFormat = `${srcTag} ${originalText}${divider}${finalTranslation} ${tgtTag}`;
-
-          if (config.vrchat_settings.only_translation) {
-            messageFormat = `${finalTranslation} ${tgtTag}`;
-          } else if (config.vrchat_settings.translation_first) {
-            messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
+            if (config.vrchat_settings.only_translation) {
+              messageFormat = `${finalTranslation} ${tgtTag}`;
+            } else if (config.vrchat_settings.translation_first) {
+              messageFormat = `${tgtTag} ${finalTranslation}${divider}${originalText} ${srcTag}`;
+            }
           }
         }
 
@@ -1109,16 +1161,19 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
       if (targetDropdownRef.current && !targetDropdownRef.current.contains(event.target as Node)) {
         setTargetDropdownOpen(false);
       }
+      if (secondaryTargetDropdownRef.current && !secondaryTargetDropdownRef.current.contains(event.target as Node)) {
+        setSecondaryTargetDropdownOpen(false);
+      }
     };
 
-    if (styleDropdownOpen || sourceDropdownOpen || targetDropdownOpen) {
+    if (styleDropdownOpen || sourceDropdownOpen || targetDropdownOpen || secondaryTargetDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [styleDropdownOpen, sourceDropdownOpen, targetDropdownOpen]);
+  }, [styleDropdownOpen, sourceDropdownOpen, targetDropdownOpen, secondaryTargetDropdownOpen]);
 
   // Reflect network status into mic status
   useEffect(() => {
@@ -1159,7 +1214,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   };
 
   // Copy to clipboard helper
-  const copyToClipboard = async (text: string, type: 'source' | 'translation') => {
+  const copyToClipboard = async (text: string, type: 'source' | 'translation' | 'secondary translation') => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -1185,12 +1240,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   return (
     <div className={`flex flex-col gap-6 theme-${config.theme_color}`}>
       {/* Centered Language Selector Header */}
-      <div className="flex items-center justify-center py-2 gap-3">
+      <div className="flex items-center justify-center py-2 gap-3 flex-wrap">
         <div className="language-selector-pill">
           {/* Source Language Custom Dropdown */}
           <div className="relative" ref={sourceDropdownRef}>
             <button
-              onClick={() => { setSourceDropdownOpen(!sourceDropdownOpen); setTargetDropdownOpen(false); }}
+              onClick={() => { setSourceDropdownOpen(!sourceDropdownOpen); setTargetDropdownOpen(false); setSecondaryTargetDropdownOpen(false); }}
               disabled={isChangingLanguage}
               className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
             >
@@ -1231,10 +1286,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
             </svg>
           </button>
 
-          {/* Target Language Custom Dropdown */}
-          <div className="relative" ref={targetDropdownRef}>
+          {/* Primary Target Language Custom Dropdown */}
+          <div className="relative flex items-center gap-1.5" ref={targetDropdownRef}>
+            <span className="text-xs font-semibold text-accent-400 opacity-60">1st</span>
             <button
-              onClick={() => { setTargetDropdownOpen(!targetDropdownOpen); setSourceDropdownOpen(false); }}
+              onClick={() => { setTargetDropdownOpen(!targetDropdownOpen); setSourceDropdownOpen(false); setSecondaryTargetDropdownOpen(false); }}
               disabled={isChangingLanguage}
               className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
             >
@@ -1263,6 +1319,81 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
               </div>
             )}
           </div>
+
+          {/* Secondary Target Language - shown inline in same pill */}
+          {config.secondary_target_language && (
+            <>
+              {/* Secondary Target Language Dropdown */}
+              <div className="relative flex items-center gap-1.5" ref={secondaryTargetDropdownRef}>
+                <span className="text-xs font-semibold text-accent-400 opacity-60">2nd</span>
+                <button
+                  onClick={() => { setSecondaryTargetDropdownOpen(!secondaryTargetDropdownOpen); setSourceDropdownOpen(false); setTargetDropdownOpen(false); }}
+                  disabled={isChangingLanguage}
+                  className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
+                >
+                  <span>{langTo.find(l => l.code === config.secondary_target_language)?.name || config.secondary_target_language}</span>
+                  <svg className={`w-3 h-3 transition-transform ${secondaryTargetDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {secondaryTargetDropdownOpen && (
+                  <div className="absolute top-full right-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                    {langTo.map((lang, index) => (
+                      <button
+                        key={`secondary-target-${index}`}
+                        onClick={() => {
+                          const newConfig = { ...config, secondary_target_language: lang.code };
+                          setConfig(newConfig);
+                          saveConfig(newConfig);
+                          setSecondaryTargetDropdownOpen(false);
+                        }}
+                        className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${config.secondary_target_language === lang.code
+                            ? 'bg-accent-400/20 text-white font-medium'
+                            : 'text-white/80 hover:bg-white/10 hover:text-white'
+                          }`}
+                      >
+                        {lang.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Remove Secondary Language Button */}
+              <button
+                onClick={() => {
+                  const newConfig = { ...config, secondary_target_language: null };
+                  setConfig(newConfig);
+                  saveConfig(newConfig);
+                  setSecondaryTranslatedText("");
+                }}
+                className="swap-btn"
+                title="Remove secondary target language"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </>
+          )}
+
+          {/* Add Secondary Language Button */}
+          {!config.secondary_target_language && (
+            <button
+              onClick={() => {
+                const defaultSecondary = targetLanguage === 'en-US' ? 'ja' : 'en-US';
+                const newConfig = { ...config, secondary_target_language: defaultSecondary };
+                setConfig(newConfig);
+                saveConfig(newConfig);
+              }}
+              className="swap-btn"
+              title="Add secondary target language"
+            >
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* History Button */}
@@ -1362,52 +1493,102 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
           </div>
         </div>
 
-        {/* Translation Panel - only in translation mode */}
+        {/* Translation Panels - only in translation mode */}
         {config.mode === 0 && (
-          <div className={`transcript-card animate-slide-up animate-delay-100 ${translating ? 'card-active' : ''}`}>
-            <div className="transcript-card-header">
-              <span className="transcript-card-label">
-                {langTo[findLangToIndex(targetLanguage)]?.name?.toUpperCase() || targetLanguage.toUpperCase()} (TARGET)
-              </span>
-              <div className="icon-btn-group">
-                {/* Speaker icon (optional for TTS) */}
-                <button className="icon-btn" title="Text to speech (coming soon)">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => copyToClipboard(translatedText, 'translation')}
-                  className="copy-btn"
-                  title="Copy to clipboard"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </button>
+          <>
+            {/* Primary Translation Panel */}
+            <div className={`transcript-card animate-slide-up animate-delay-100 ${translating ? 'card-active' : ''}`}>
+              <div className="transcript-card-header">
+                <span className="transcript-card-label">
+                  {langTo[findLangToIndex(targetLanguage)]?.name?.toUpperCase() || targetLanguage.toUpperCase()} (1st TARGET)
+                </span>
+                <div className="icon-btn-group">
+                  {/* Speaker icon (optional for TTS) */}
+                  <button className="icon-btn" title="Text to speech (coming soon)">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => copyToClipboard(translatedText, 'translation')}
+                    className="copy-btn"
+                    title="Copy to clipboard"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="transcript-card-content">
+                {translatedText || (
+                  <span className="text-white/40 italic text-xl">
+                    {isChangingLanguage ? 'Changing language…' : 'Translation updates dynamically'}
+                  </span>
+                )}
+              </div>
+
+              <div className="transcript-card-status">
+                {translating && (
+                  <>
+                    <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></div>
+                    <span>Translating...</span>
+                  </>
+                )}
+                {!translating && translatedText && (
+                  <span className="text-white/50">Translation updates dynamically</span>
+                )}
               </div>
             </div>
 
-            <div className="transcript-card-content">
-              {translatedText || (
-                <span className="text-white/40 italic text-xl">
-                  {isChangingLanguage ? 'Changing language…' : 'Translation updates dynamically'}
-                </span>
-              )}
-            </div>
+            {/* Secondary Translation Panel - only when secondary language is enabled */}
+            {config.secondary_target_language && (
+              <div className={`transcript-card animate-slide-up animate-delay-200 ${translating ? 'card-active' : ''}`}>
+                <div className="transcript-card-header">
+                  <span className="transcript-card-label">
+                    {langTo[findLangToIndex(config.secondary_target_language)]?.name?.toUpperCase() || config.secondary_target_language.toUpperCase()} (2nd TARGET)
+                  </span>
+                  <div className="icon-btn-group">
+                    <button className="icon-btn" title="Text to speech (coming soon)">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(secondaryTranslatedText, 'secondary translation')}
+                      className="copy-btn"
+                      title="Copy to clipboard"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
 
-            <div className="transcript-card-status">
-              {translating && (
-                <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></div>
-                  <span>Translating...</span>
-                </>
-              )}
-              {!translating && translatedText && (
-                <span className="text-white/50">Translation updates dynamically</span>
-              )}
-            </div>
-          </div>
+                <div className="transcript-card-content">
+                  {secondaryTranslatedText || (
+                    <span className="text-white/40 italic text-xl">
+                      {isChangingLanguage ? 'Changing language…' : 'Secondary translation updates dynamically'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="transcript-card-status">
+                  {translating && (
+                    <>
+                      <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></div>
+                      <span>Translating...</span>
+                    </>
+                  )}
+                  {!translating && secondaryTranslatedText && (
+                    <span className="text-white/50">Translation updates dynamically</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1421,6 +1602,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
             onClick={() => {
               setSourceText("");
               setTranslatedText("");
+              setSecondaryTranslatedText("");
               detectionQueue = [];
             }}
             className="control-btn"

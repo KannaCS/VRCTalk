@@ -149,8 +149,12 @@ fn run_inference_on_context(
 ) -> Result<String, String> {
     println!("Starting inference on context...");
 
-    // Create params with greedy sampling
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    // Use BeamSearch instead of Greedy to prevent temperature fallback
+    // BeamSearch provides better quality and doesn't retry with higher temperatures
+    let mut params = FullParams::new(SamplingStrategy::BeamSearch { 
+        beam_size: 5,      // Standard beam size for good quality
+        patience: -1.0     // Default patience
+    });
 
     // Set language (convert to Whisper 2-letter format)
     let whisper_lang = match language {
@@ -179,12 +183,16 @@ fn run_inference_on_context(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
     
-    // Additional parameters to reduce hallucinations and improve quality
+    // Critical parameters to prevent hallucinations and runaway generation
     params.set_suppress_blank(true); // Suppress blank outputs
     params.set_suppress_nst(true); // Suppress non-speech tokens
-    params.set_temperature(0.0); // Use greedy decoding (no randomness)
     params.set_no_context(true); // Don't use context to prevent hallucination continuation
     params.set_single_segment(false); // Allow multiple segments for better accuracy
+    params.set_max_tokens(100); // Limit tokens to prevent infinite loops - ~7.5 seconds of speech
+    params.set_entropy_thold(2.4); // Reject low-entropy (repetitive) outputs
+    
+    // BeamSearch doesn't use temperature fallback, so no need to set temperature params
+    // This prevents the problematic retry mechanism that causes hallucinations
 
     // Create state
     let mut state = ctx

@@ -211,7 +211,11 @@ export class Whisper extends Recognizer {
             const wavData = await this.convertToWav(audioBlob);
 
             if (!wavData || wavData.length === 0) {
-                info(`[WHISPER] Failed to convert audio to WAV format`);
+                info(`[WHISPER] Failed to convert audio to WAV format - likely silence or corrupted chunk, skipping`);
+                // Reset to listening state without showing error to user
+                if (this.resultCallback) {
+                    this.resultCallback("Listening...", false);
+                }
                 return;
             }
 
@@ -242,9 +246,10 @@ export class Whisper extends Recognizer {
             const errorMessage = err instanceof Error ? err.message : String(err);
             error(`[WHISPER] Error processing audio: ${errorMessage}`);
             
-            // Report error to UI
+            // Don't show processing errors to UI - just reset to listening state
+            // Most errors here are benign (silence, corrupted chunks, etc.)
             if (this.resultCallback) {
-                this.resultCallback(`Transcription error: ${errorMessage}`, true);
+                this.resultCallback("Listening...", false);
             }
         }
     }
@@ -306,10 +311,8 @@ export class Whisper extends Recognizer {
             const errorMessage = err instanceof Error ? err.message : String(err);
             error(`[WHISPER] Error converting audio to WAV: ${errorMessage}`);
             
-            // Report to UI
-            if (this.resultCallback) {
-                this.resultCallback(`Audio conversion error: ${errorMessage}`, true);
-            }
+            // Don't show conversion errors to UI - these are often just silence or corrupted chunks
+            // Return empty data and let the processAudioChunks function handle it gracefully
             return new Uint8Array(0);
         }
     }

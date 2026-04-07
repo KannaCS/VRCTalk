@@ -23,6 +23,7 @@ export type Config = {
     onboarding_completed: boolean; // Whether first-time setup has been completed
     source_language: string;
     target_language: string;
+    secondary_target_language: string | null; // Optional second target language for dual translation
     mode: number;    // 0 = translation, 1 = transcription only
     selected_microphone: string | null; // Device ID for selected microphone
     recognizer: string; // "webspeech" or "whisper"
@@ -96,6 +97,7 @@ export const DEFAULT_CONFIG: Config = {
     onboarding_completed: false, // First-time users need to complete onboarding
     source_language: "en-US",
     target_language: "ja",
+    secondary_target_language: null, // Disabled by default
     mode: 0,
     selected_microphone: null, // Default to system default microphone
     recognizer: "webspeech", // Default to WebSpeech
@@ -195,6 +197,9 @@ export function validateConfig(config: Config): Config {
     // Copy valid values from the provided config
     if (config.source_language) validated.source_language = config.source_language;
     if (config.target_language) validated.target_language = config.target_language;
+    if (config.secondary_target_language !== undefined) {
+        validated.secondary_target_language = config.secondary_target_language;
+    }
     if (typeof config.mode === 'number') validated.mode = config.mode;
     // Microphone selection is no longer user-configurable – always use system default
     validated.selected_microphone = null;

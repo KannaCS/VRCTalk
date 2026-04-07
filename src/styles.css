@@ -1241,6 +1241,9 @@ body {
 .language-selector-pill .swap-btn {
   @apply p-1.5 rounded-full transition-all duration-300 mx-1;
   background: rgba(71, 85, 105, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .language-selector-pill .swap-btn:hover {

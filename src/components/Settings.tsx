@@ -25,6 +25,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   // Dropdown states
   const [sourceLanguageDropdownOpen, setSourceLanguageDropdownOpen] = useState(false);
   const [targetLanguageDropdownOpen, setTargetLanguageDropdownOpen] = useState(false);
+  const [secondaryTargetLanguageDropdownOpen, setSecondaryTargetLanguageDropdownOpen] = useState(false);
   const [recognizerDropdownOpen, setRecognizerDropdownOpen] = useState(false);
   const [whisperModelDropdownOpen, setWhisperModelDropdownOpen] = useState(false);
   const [translatorDropdownOpen, setTranslatorDropdownOpen] = useState(false);
@@ -33,6 +34,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   // Dropdown refs
   const sourceLanguageDropdownRef = useRef<HTMLDivElement>(null);
   const targetLanguageDropdownRef = useRef<HTMLDivElement>(null);
+  const secondaryTargetLanguageDropdownRef = useRef<HTMLDivElement>(null);
   const recognizerDropdownRef = useRef<HTMLDivElement>(null);
   const whisperModelDropdownRef = useRef<HTMLDivElement>(null);
   const translatorDropdownRef = useRef<HTMLDivElement>(null);
@@ -55,6 +57,9 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       }
       if (targetLanguageDropdownRef.current && !targetLanguageDropdownRef.current.contains(event.target as Node)) {
         setTargetLanguageDropdownOpen(false);
+      }
+      if (secondaryTargetLanguageDropdownRef.current && !secondaryTargetLanguageDropdownRef.current.contains(event.target as Node)) {
+        setSecondaryTargetLanguageDropdownOpen(false);
       }
       if (recognizerDropdownRef.current && !recognizerDropdownRef.current.contains(event.target as Node)) {
         setRecognizerDropdownOpen(false);
@@ -464,6 +469,57 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                             {lang.name}
                           </button>
                         ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="settings-field">
+                  <div className="settings-row-info mb-3">
+                    <div className="settings-row-title">Secondary Target Language</div>
+                    <div className="settings-row-description">Add a second target language for dual translation</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Toggle
+                      checked={localConfig.secondary_target_language !== null}
+                      onChange={(checked) => {
+                        if (checked) {
+                          const defaultSecondary = localConfig.target_language === 'en-US' ? 'ja' : 'en-US';
+                          updateLocalConfig({ secondary_target_language: defaultSecondary });
+                        } else {
+                          updateLocalConfig({ secondary_target_language: null });
+                        }
+                      }}
+                    />
+                    {localConfig.secondary_target_language !== null && (
+                      <div className="flex-1 relative" ref={secondaryTargetLanguageDropdownRef}>
+                        <button
+                          onClick={() => setSecondaryTargetLanguageDropdownOpen(!secondaryTargetLanguageDropdownOpen)}
+                          className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                        >
+                          <span>{targetLanguageOptions.find(l => l.code === localConfig.secondary_target_language)?.name || localConfig.secondary_target_language}</span>
+                          <svg className={`w-4 h-4 transition-transform ${secondaryTargetLanguageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {secondaryTargetLanguageDropdownOpen && (
+                          <div className="absolute top-full left-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                            {targetLanguageOptions.map((lang) => (
+                              <button
+                                key={lang.code}
+                                onClick={() => {
+                                  updateLocalConfig({ secondary_target_language: lang.code });
+                                  setSecondaryTargetLanguageDropdownOpen(false);
+                                }}
+                                className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${localConfig.secondary_target_language === lang.code
+                                  ? 'bg-accent-400/20 text-white font-medium'
+                                  : 'text-white/80 hover:bg-white/10 hover:text-white'
+                                }`}
+                              >
+                                {lang.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

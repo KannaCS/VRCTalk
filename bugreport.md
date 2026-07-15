@@ -1,0 +1,3 @@
+Critical Backend Crash: The OSC UDP Listener will permanently crash upon receiving a socket error due to attempting to re-bind to an address that is already in use by the old socket.
+Audio Loss During Dictation: The Whisper recording logic implements a 3-second recording window followed by a 500ms delay, leading to half a second of unrecorded audio (and missing words) every 3.5 seconds.
+UI Breakage from Backend Error Propagation: If a user places an unrecognized folder into their whisper_models directory, the backend throws an error that entirely breaks the dropdown for selecting Whisper models in the UI.

@@ -60,9 +60,7 @@ export class Whisper extends Recognizer {
                 }
             };
 
-            this.mediaRecorder.onstop = () => {
-                this.processAudioChunks();
-            };
+            // onstop is managed by startRecordingLoop for seamless chunk chaining
 
             this.running = true;
             this.startRecordingLoop();
@@ -86,7 +84,7 @@ export class Whisper extends Recognizer {
         this.isRecording = false;
 
         if (this.intervalId) {
-            clearInterval(this.intervalId);
+            clearTimeout(this.intervalId); // intervalId now holds a setTimeout handle
             this.intervalId = null;
         }
 
@@ -157,39 +155,42 @@ export class Whisper extends Recognizer {
     private startRecordingLoop(): void {
         if (!this.running || !this.mediaRecorder) return;
 
-        const recordChunk = () => {
+        const startChunk = () => {
             if (!this.running || !this.mediaRecorder) return;
+            if (this.mediaRecorder.state !== 'inactive') return;
 
-            if (this.mediaRecorder.state === 'inactive') {
-                this.audioChunks = []; // Clear previous chunks
-                this.mediaRecorder.start();
-                this.isRecording = true;
+            this.audioChunks = [];
+            this.mediaRecorder.start();
+            this.isRecording = true;
 
-                // Send interim result to show we're listening
-                if (this.resultCallback) {
-                    this.resultCallback("Listening...", false); // Show listening status
-                }
-
-                // Stop recording after interval
-                setTimeout(() => {
-                    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-                        this.mediaRecorder.stop();
-                        this.isRecording = false;
-                        // Indicate processing state
-                        if (this.resultCallback) {
-                            this.resultCallback("Processing...", false);
-                        }
-                    }
-                }, this.recordingInterval);
+            if (this.resultCallback) {
+                this.resultCallback("Listening...", false);
             }
+
+            // Schedule the end of this chunk
+            this.intervalId = setTimeout(() => {
+                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                    this.mediaRecorder.stop();
+                    this.isRecording = false;
+                    if (this.resultCallback) {
+                        this.resultCallback("Processing...", false);
+                    }
+                }
+            }, this.recordingInterval);
         };
 
-        // Start first recording immediately
-        recordChunk();
+        // Chain recordings via onstop: as soon as one chunk ends, the next begins
+        // immediately with zero gap. processAudioChunks() is safe to call here
+        // because it constructs its Blob synchronously before its first await,
+        // so resetting audioChunks for the new chunk won't race with in-flight
+        // processing of the previous one.
+        this.mediaRecorder.onstop = () => {
+            this.processAudioChunks();
+            startChunk();
+        };
 
-        // Set up interval for continuous recording
-        // Add 500ms gap for processing to complete before next chunk
-        this.intervalId = setInterval(recordChunk, this.recordingInterval + 500);
+        // Kick off the first chunk immediately
+        startChunk();
     }
 
     private async processAudioChunks(): Promise<void> {

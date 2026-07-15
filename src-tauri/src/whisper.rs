@@ -638,8 +638,11 @@ pub async fn whisper_get_downloaded_models(
 
         if path.is_dir() {
             if let Some(model_name) = path.file_name().and_then(|n| n.to_str()) {
-                // Check if this model is fully downloaded
-                if whisper_is_model_downloaded(app_handle.clone(), model_name.to_string()).await? {
+                // Check if this model is fully downloaded.
+                // Use if let Ok(true) instead of ? so that unrecognized directory
+                // names (e.g. tmp folders, old model IDs, .DS_Store) return Err
+                // and are silently skipped rather than aborting the whole scan.
+                if let Ok(true) = whisper_is_model_downloaded(app_handle.clone(), model_name.to_string()).await {
                     downloaded_models.push(model_name.to_string());
                 }
             }

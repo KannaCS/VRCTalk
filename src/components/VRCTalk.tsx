@@ -429,7 +429,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
             if (!isValidTranslation(translatedResult, text, sourceLanguage, targetLanguage)) {
               // Log the validation failure
               if (translatedResult.includes('(translation failed:')) {
-                error(`[TRANSLATION] Error pattern detected in primary result: ${translatedResult}`);
+                error(`[TRANSLATION] Fatal error pattern detected in primary result: ${translatedResult}`);
+                // Break out of BOTH loops entirely for fatal API errors
+                lock = false;
+                setTranslating(false);
+                return;
               } else if (!translatedResult || translatedResult.trim() === '') {
                 error(`[TRANSLATION] Empty or null primary translation result detected`);
               } else if (translatedResult === text) {
@@ -444,6 +448,13 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
             // Validate secondary translation if it exists
             if (config.secondary_target_language && secondaryTranslatedResult) {
               if (!isValidTranslation(secondaryTranslatedResult, text, sourceLanguage, config.secondary_target_language)) {
+                if (secondaryTranslatedResult.includes('(translation failed:')) {
+                  error(`[TRANSLATION] Fatal error pattern detected in secondary result: ${secondaryTranslatedResult}`);
+                  // Break out of BOTH loops entirely for fatal API errors
+                  lock = false;
+                  setTranslating(false);
+                  return;
+                }
                 error(`[TRANSLATION] Secondary translation validation failed, but continuing with primary`);
                 secondaryTranslatedResult = ""; // Clear invalid secondary translation
               }

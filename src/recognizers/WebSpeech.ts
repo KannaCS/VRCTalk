@@ -20,6 +20,9 @@ export class WebSpeech extends Recognizer {
     private lastActivityTime: number = Date.now();
     private healthCheckInterval: any = null;
     private maxIdleTime: number = 30000; // 30 seconds
+    // Prevents handleOnEnd from scheduling a competing restart while the
+    // health check is already performing its own stop → start cycle.
+    private isHealthChecking: boolean = false;
 
     constructor(lang: string, microphoneId: string | null = null) {
         super(lang);
@@ -88,7 +91,10 @@ export class WebSpeech extends Recognizer {
         // This handles cases where recognition stops due to timeout/idle
         const shouldBeRunning = this.running;
         
-        if (shouldBeRunning) {
+        // If the health check is the one that called stop(), let IT handle the
+        // restart. Trying to restart here too causes "recognition has already
+        // started" errors because both paths race to call recognition.start().
+        if (shouldBeRunning && !this.isHealthChecking) {
             info("[WEBSPEECH] Recognition ended unexpectedly. Restarting...");
             
             // Use exponential backoff for reconnection attempts
@@ -494,10 +500,18 @@ export class WebSpeech extends Recognizer {
                 info(`[WEBSPEECH] Health check: Recognition idle for ${timeSinceLastActivity}ms. Restarting...`);
                 this.lastActivityTime = Date.now();
                 
+                // Raise the guard BEFORE calling stop() so that the onend event
+                // that stop() triggers does NOT cause handleOnEnd to schedule a
+                // competing restart at a different delay.
+                this.isHealthChecking = true;
+                
                 try {
-                    // Try to stop and restart
                     this.recognition.stop();
                     setTimeout(() => {
+                        // Always lower the guard when we're done, whether we
+                        // succeed or fail, so handleOnEnd is not permanently
+                        // suppressed if something goes wrong here.
+                        this.isHealthChecking = false;
                         if (this.running) {
                             try {
                                 this.recognition.start();
@@ -517,6 +531,8 @@ export class WebSpeech extends Recognizer {
                         }
                     }, 500);
                 } catch (err: unknown) {
+                    // Lower the guard immediately if stop() itself threw
+                    this.isHealthChecking = false;
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Health check: Error during restart: ${errorMessage}`);
                 }

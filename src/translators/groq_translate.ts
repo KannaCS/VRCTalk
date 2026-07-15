@@ -42,8 +42,13 @@ async function makeTranslationRequest(
     sourceLang: string,
     targetLang: string,
     apiKey: string,
-    styleInstruction: string
+    styleInstruction: string,
+    scriptInstruction: string = ''
 ): Promise<{ success: boolean; result?: string; isRateLimited?: boolean; retryAfter?: number; error?: string }> {
+    const systemContent = scriptInstruction
+        ? `You are a professional translator. Provide only the translation without any explanations or additional text. ${scriptInstruction}`
+        : `You are a professional translator. Provide only the translation without any explanations or additional text.`;
+
     const prompt = `Translate the following text from ${sourceLang} to ${targetLang}. ${styleInstruction} Only provide the translation, no explanations or additional text.
 
 Text to translate: "${text}"
@@ -66,7 +71,7 @@ Translation:`;
                 messages: [
                     {
                         role: "system",
-                        content: "You are a professional translator. Provide only the translation without any explanations or additional text."
+                        content: systemContent
                     },
                     {
                         role: "user",
@@ -160,6 +165,17 @@ export default async function translateGroq(
     };
     const styleInstruction = styleInstructions[style] || styleInstructions['casual'];
 
+    // Script-specific instructions to ensure correct writing system is used
+    const scriptInstructions: Record<string, string> = {
+        'ko': 'CRITICAL: Output ONLY Hangul characters. You MUST NOT use any Hanja (漢字), Chinese characters, Japanese kanji, or any CJK characters whatsoever. Every single character in the output must be Hangul or standard punctuation.',
+        'ko-KR': 'CRITICAL: Output ONLY Hangul characters. You MUST NOT use any Hanja (漢字), Chinese characters, Japanese kanji, or any CJK characters whatsoever. Every single character in the output must be Hangul or standard punctuation.',
+        'ja': 'Use natural modern Japanese with Hiragana, Katakana, and common everyday Kanji. Avoid obscure, archaic, or Chinese-specific Kanji that are not standard in modern Japanese.',
+        'ja-JP': 'Use natural modern Japanese with Hiragana, Katakana, and common everyday Kanji. Avoid obscure, archaic, or Chinese-specific Kanji that are not standard in modern Japanese.',
+        'zh-CN': 'Use Simplified Chinese characters (Simplified script, as used in Mainland China).',
+        'zh-TW': 'Use Traditional Chinese characters (Traditional script, as used in Taiwan).',
+    };
+    const scriptInstruction = scriptInstructions[target] || '';
+
     let lastError = '';
     let attempts = 0;
     const triedKeys = new Set<string>();
@@ -182,7 +198,7 @@ export default async function translateGroq(
 
         info(`[GROQ] Attempting translation (attempt ${attempts + 1}/${MAX_FALLBACK_ATTEMPTS})`);
 
-        const result = await makeTranslationRequest(text, sourceLang, targetLang, apiKey, styleInstruction);
+        const result = await makeTranslationRequest(text, sourceLang, targetLang, apiKey, styleInstruction, scriptInstruction);
 
         if (result.success && result.result) {
             groqKeyManager.markKeySuccess(apiKey);

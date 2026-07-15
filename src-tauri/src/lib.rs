@@ -108,7 +108,10 @@ fn start_vrc_listener(app: AppHandle) -> Result<(), String> {
                             println!("Error receiving from socket: {}", e);
                             let _ = app.emit("vrchat-status", "disconnected");
 
-                            // Try to reconnect after a delay
+                            // Drop the old socket BEFORE sleeping so the port is freed,
+                            // otherwise the subsequent bind call will fail with
+                            // "Address already in use" and permanently kill the listener.
+                            drop(sock);
                             thread::sleep(std::time::Duration::from_secs(5));
                             match UdpSocket::bind(listen_addr) {
                                 Ok(new_sock) => {

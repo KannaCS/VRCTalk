@@ -38,13 +38,14 @@ export class Whisper extends Recognizer {
 
             // Get microphone access
             // Don't constrain sample rate - let browser use native rate, we'll resample later
+            // Disable aggressive audio processing to prevent audio suppression and distortion
             const constraints: MediaStreamConstraints = {
                 audio: {
                     deviceId: this.selectedMicrophoneId ? { exact: this.selectedMicrophoneId } : undefined,
                     channelCount: 1, // Prefer mono audio
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
                 }
             };
 

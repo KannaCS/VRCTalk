@@ -57,19 +57,7 @@ export class WebSpeech extends Recognizer {
             
             // Re-attach the result callback if one was previously set
             if (this.resultCallback) {
-                this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
-                    if (event.results.length > 0) {
-                        // Update activity time on every result
-                        this.lastActivityTime = Date.now();
-                        // Reset reconnect attempts on successful transcription
-                        this.reconnectAttempts = 0;
-                        
-                        this.resultCallback!(
-                            event.results[event.results.length - 1][0].transcript.trim(),
-                            event.results[event.results.length - 1].isFinal
-                        );
-                    }
-                };
+                this.recognition.onresult = this.handleOnResult.bind(this);
             }
             
             // Reset reconnect attempts when successfully initialized
@@ -466,19 +454,41 @@ export class WebSpeech extends Recognizer {
 
     onResult(callback: (result: string, final: boolean) => void): void {
         this.resultCallback = callback;
-        
-        this.recognition.onresult = (event: { results: { [key: number]: { [key: number]: { transcript: string }; isFinal: boolean }; length: number } }) => {
-            if (event.results.length > 0) {
-                // Update activity time and reset reconnect attempts on every result
-                this.lastActivityTime = Date.now();
-                this.reconnectAttempts = 0;
+        this.recognition.onresult = this.handleOnResult.bind(this);
+    }
+
+    private handleOnResult(event: any): void {
+        if (!this.resultCallback) return;
+
+        if (event.results.length > 0) {
+            // Update activity time and reset reconnect attempts on every result
+            this.lastActivityTime = Date.now();
+            this.reconnectAttempts = 0;
+
+            let interimTranscript = '';
+            
+            // Iterate through all results starting from the changed index
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const result = event.results[i];
+                const transcript = result[0].transcript.trim();
                 
-                callback(
-                    event.results[event.results.length - 1][0].transcript.trim(),
-                    event.results[event.results.length - 1].isFinal
-                );
+                if (result.isFinal) {
+                    // Send final results immediately if they have content
+                    if (transcript.length > 0) {
+                        this.resultCallback(transcript, true);
+                    }
+                } else {
+                    interimTranscript += transcript;
+                }
             }
-        };
+            
+            // If we have an interim transcript, send it
+            // Only send interim if the last result in the event isn't final
+            // (If it was final, we already sent it, and we don't want to overwrite with empty interim)
+            if (event.results[event.results.length - 1].isFinal === false) {
+                this.resultCallback(interimTranscript.trim(), false);
+            }
+        }
     }
 
     private startHealthCheck(): void {

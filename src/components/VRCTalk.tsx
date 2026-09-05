@@ -1418,6 +1418,50 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
           </svg>
           <span>History</span>
         </button>
+
+        {/* Translation Style Button */}
+        {(config.translator === 'gemini' || config.translator === 'groq') && (
+          <div className="relative" ref={styleDropdownRef}>
+            <button
+              onClick={() => setStyleDropdownOpen(!styleDropdownOpen)}
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-accent-400/20 text-white/80 hover:text-white hover:bg-dark-700/50 transition-all text-sm"
+              title="Translation Style"
+            >
+              <span className="capitalize">{config.translation_style} Style</span>
+              <svg className={`w-3 h-3 transition-transform ${styleDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {styleDropdownOpen && (
+              <div className="absolute top-full right-0 mt-2 bg-dark-800/95 backdrop-blur-xl rounded-xl border border-accent-400/30 shadow-2xl overflow-hidden z-50 animate-slide-up min-w-[120px]">
+                {[
+                  { value: 'casual', emoji: '💬', label: 'Casual' },
+                  { value: 'formal', emoji: '🎩', label: 'Formal' },
+                  { value: 'polite', emoji: '🙏', label: 'Polite' },
+                  { value: 'friendly', emoji: '😊', label: 'Friendly' }
+                ].map((style) => (
+                  <button
+                    key={style.value}
+                    onClick={() => {
+                      const newConfig = { ...config, translation_style: style.value };
+                      setConfig(newConfig);
+                      saveConfig(newConfig).catch(err => error(`Error saving translation style: ${err}`));
+                      setStyleDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-all ${config.translation_style === style.value
+                      ? 'bg-accent-400/20 text-white'
+                      : 'text-white/70 hover:bg-accent-400/10 hover:text-white'
+                      }`}
+                  >
+                    <span>{style.emoji}</span>
+                    <span>{style.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Live Session Badge */}
@@ -1654,65 +1698,6 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
       {/* Manual Input Section (hidden by default, scrollable) */}
 
 
-      {/* Status Bar */}
-      <div className="flex items-center justify-center gap-4 text-xs text-white/50">
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${micStatus === 'muted' ? 'bg-yellow-500' :
-            (micStatus === 'disconnected' || micStatus === 'error' || micStatus === 'initializing') ? 'bg-red-500' :
-              'bg-green-500'
-            }`}></div>
-          <span>{defaultMicrophone}</span>
-        </div>
-        <span>•</span>
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${vrcMuted ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
-          <span>VRChat {vrcMuted ? 'Muted' : 'Connected'}</span>
-        </div>
-        {(config.translator === 'gemini' || config.translator === 'groq') && (
-          <>
-            <span>•</span>
-            <div className="relative" ref={styleDropdownRef}>
-              <button
-                onClick={() => setStyleDropdownOpen(!styleDropdownOpen)}
-                className="flex items-center gap-1 hover:text-white/80 transition-colors"
-              >
-                <span className="capitalize">{config.translation_style}</span>
-                <svg className={`w-3 h-3 transition-transform ${styleDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {styleDropdownOpen && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-dark-800/95 backdrop-blur-xl rounded-xl border border-accent-400/30 shadow-2xl overflow-hidden z-50 animate-slide-up min-w-[120px]">
-                  {[
-                    { value: 'casual', emoji: '💬', label: 'Casual' },
-                    { value: 'formal', emoji: '🎩', label: 'Formal' },
-                    { value: 'polite', emoji: '🙏', label: 'Polite' },
-                    { value: 'friendly', emoji: '😊', label: 'Friendly' }
-                  ].map((style) => (
-                    <button
-                      key={style.value}
-                      onClick={() => {
-                        const newConfig = { ...config, translation_style: style.value };
-                        setConfig(newConfig);
-                        saveConfig(newConfig).catch(err => error(`Error saving translation style: ${err}`));
-                        setStyleDropdownOpen(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-all ${config.translation_style === style.value
-                        ? 'bg-accent-400/20 text-white'
-                        : 'text-white/70 hover:bg-accent-400/10 hover:text-white'
-                        }`}
-                    >
-                      <span>{style.emoji}</span>
-                      <span>{style.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 };

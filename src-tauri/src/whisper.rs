@@ -234,7 +234,7 @@ fn run_inference_on_context(
 }
 
 // Simple speech activity detection based on audio energy
-fn detect_speech_activity(audio_samples: &[f32]) -> Result<bool, String> {
+fn detect_speech_activity(audio_samples: &[f32], rms_threshold: f32) -> Result<bool, String> {
     if audio_samples.is_empty() {
         return Ok(false);
     }
@@ -261,10 +261,8 @@ fn detect_speech_activity(audio_samples: &[f32]) -> Result<bool, String> {
         return Ok(false);
     }
 
-    // Higher thresholds to reduce sensitivity and false positives from background noise
-    // These values require clear, intentional speech to trigger transcription
-    let rms_threshold = 0.02; // Doubled from 0.01 - requires more energy
-    let peak_threshold = 0.1; // Doubled from 0.05 - requires clearer peaks
+    // Use configurable threshold for RMS, fixed peak threshold relative to RMS
+    let peak_threshold = rms_threshold * 4.0;
 
     let has_energy = rms > rms_threshold;
     let has_peaks = peak > peak_threshold;
@@ -295,15 +293,15 @@ fn detect_speech_activity(audio_samples: &[f32]) -> Result<bool, String> {
                 (sum_squares / (next_end - next_start) as f32).sqrt()
             };
 
-            if (segment_rms - next_segment_rms).abs() > 0.015 {
-                // Require significant variation - speech has dynamic range, noise is static
+            // Require smaller variation to account for consistent speech or low-volume segments
+            if (segment_rms - next_segment_rms).abs() > 0.002 {
                 amplitude_changes += 1;
             }
         }
     }
 
-    // Require at least 3 amplitude changes to ensure it's dynamic speech, not static noise
-    let has_variation = amplitude_changes >= 3;
+    // Require at least 1 amplitude change
+    let has_variation = amplitude_changes >= 1;
 
     println!(
         "Speech detection - Energy: {}, Peaks: {}, Variation: {} changes",
@@ -311,7 +309,6 @@ fn detect_speech_activity(audio_samples: &[f32]) -> Result<bool, String> {
     );
 
     // Speech is detected if we have sufficient energy, peaks, AND variation
-    // All three conditions required to reduce false positives
     let speech_detected = has_energy && has_peaks && has_variation;
 
     Ok(speech_detected)
@@ -659,6 +656,7 @@ pub async fn whisper_transcribe(
     audio_data: Vec<u8>,
     model: String,
     language: String,
+    vad_threshold: f32,
 ) -> Result<String, String> {
     println!("=== WHISPER TRANSCRIPTION START ===");
     println!(
@@ -673,7 +671,7 @@ pub async fn whisper_transcribe(
     let audio_samples = process_audio_for_whisper(&audio_data)?;
 
     // Check speech activity (lightweight check before locking)
-    match detect_speech_activity(&audio_samples) {
+    match detect_speech_activity(&audio_samples, vad_threshold) {
         Ok(has_speech) => {
             if !has_speech {
                 println!("No speech detected, skipping inference");

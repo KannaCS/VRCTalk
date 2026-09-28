@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Speech API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #transcript {
+            border: 1px solid #ccc;
+            padding: 15px;
+            min-height: 100px;
+            margin: 20px 0;
+            background: #f9f9f9;
+        }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 3px solid #666;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Web Speech API Diagnostic Tool</h1>
+    
+    <div class="status info">
+        <strong>Browser:</strong> <span id="browser"></span><br>
+        <strong>Web Speech API:</strong> <span id="apiStatus"></span><br>
+        <strong>Internet:</strong> <span id="internetStatus">Checking...</span>
+    </div>
+
+    <h2>Language Test</h2>
+    <label>
+        Select Language:
+        <select id="language">
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="id-ID" selected>Indonesian</option>
+            <option value="ko-KR">Korean</option>
+            <option value="ja-JP">Japanese</option>
+            <option value="zh-CN">Chinese (Simplified)</option>
+            <option value="es-ES">Spanish</option>
+            <option value="fr-FR">French</option>
+        </select>
+    </label>
+
+    <div>
+        <button id="startBtn">Start Recognition</button>
+        <button id="stopBtn" disabled>Stop Recognition</button>
+    </div>
+
+    <h3>Transcript:</h3>
+    <div id="transcript">(Speak after clicking Start...)</div>
+
+    <h3>Event Log:</h3>
+    <div class="log" id="log"></div>
+
+    <script>
+        // Check browser
+        const browserName = (function() {
+            const ua = navigator.userAgent;
+            if (ua.includes('Chrome') && !ua.includes('Edge')) return 'Chrome';
+            if (ua.includes('Edg')) return 'Edge';
+            if (ua.includes('Safari') && !ua.includes('Chrome')) return 'Safari';
+            if (ua.includes('Firefox')) return 'Firefox';
+            return 'Unknown';
+        })();
+        document.getElementById('browser').textContent = browserName;
+
+        // Check API availability
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const apiAvailable = !!SpeechRecognition;
+        document.getElementById('apiStatus').textContent = apiAvailable ? '✅ Available' : '❌ Not Available';
+
+        // Check internet
+        fetch('https://www.google.com/favicon.ico', { mode: 'no-cors' })
+            .then(() => {
+                document.getElementById('internetStatus').textContent = '✅ Connected';
+            })
+            .catch(() => {
+                document.getElementById('internetStatus').textContent = '❌ Offline';
+            });
+
+        if (!apiAvailable) {
+            document.getElementById('startBtn').disabled = true;
+            log('❌ Web Speech API not available in this browser', 'error');
+        }
+
+        let recognition = null;
+        let isRunning = false;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#d32f2f' : type === 'success' ? '#388e3c' : '#666';
+            logDiv.innerHTML += `<div style="color: ${color}">[${time}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${time}] ${message}`);
+        }
+
+        function initRecognition() {
+            const lang = document.getElementById('language').value;
+            log(`🔧 Initializing recognition with language: ${lang}`);
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = lang;
+
+            recognition.onstart = () => {
+                log('✅ Recognition started successfully', 'success');
+                isRunning = true;
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+            };
+
+            recognition.onend = () => {
+                log('⚠️ Recognition ended');
+                isRunning = false;
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            };
+
+            recognition.onerror = (event) => {
+                log(`❌ ERROR: ${event.error} ${event.message || ''}`, 'error');
+                
+                // Detailed error messages
+                if (event.error === 'network') {
+                    log('💡 Network error means: Cannot connect to Google servers', 'error');
+                    log('   Possible causes: No internet, firewall blocking, or service unavailable', 'error');
+                } else if (event.error === 'not-allowed') {
+                    log('💡 Microphone permission denied', 'error');
+                } else if (event.error === 'no-speech') {
+                    log('💡 No speech detected (this is normal, keep talking)', 'info');
+                }
+            };
+
+            recognition.onnomatch = () => {
+                log('⚠️ No match found');
+            };
+
+            recognition.onresult = (event) => {
+                let interim = '';
+                let final = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        final += transcript + ' ';
+                        log(`📝 FINAL: "${transcript}"`, 'success');
+                    } else {
+                        interim += transcript + ' ';
+                    }
+                }
+
+                const transcriptDiv = document.getElementById('transcript');
+                if (final) {
+                    transcriptDiv.innerHTML += `<strong>${final}</strong><br>`;
+                }
+                if (interim) {
+                    transcriptDiv.innerHTML += `<em style="color: #666">${interim}</em><br>`;
+                }
+                transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+            };
+        }
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            try {
+                document.getElementById('transcript').innerHTML = '';
+                document.getElementById('log').innerHTML = '';
+                initRecognition();
+                recognition.start();
+                log('🎤 Starting recognition...');
+            } catch (error) {
+                log(`❌ Failed to start: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if (recognition && isRunning) {
+                recognition.stop();
+                log('🛑 Stopping recognition...');
+            }
+        });
+
+        document.getElementById('language').addEventListener('change', () => {
+            if (recognition && isRunning) {
+                recognition.stop();
+                log('🔄 Language changed, recognition stopped');
+            }
+        });
+
+        // Initial log
+        log('🚀 Ready! Select language and click Start Recognition');
+        log('💡 Tip: Make sure you have an active internet connection');
+    </script>
+</body>
+</html>

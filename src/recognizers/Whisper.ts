@@ -3,25 +3,33 @@ import { info, error } from '@tauri-apps/plugin-log';
 import { invoke } from '@tauri-apps/api/core';
 
 export class Whisper extends Recognizer {
-    public model: string; // Make it public so we can access it for comparisons
+    public model: string;
+    public vadThreshold: number;
     private selectedMicrophoneId: string | null = null;
     private audioStream: MediaStream | null = null;
-    private mediaRecorder: MediaRecorder | null = null;
+    private audioContext: AudioContext | null = null;
+    private scriptProcessor: ScriptProcessorNode | null = null;
+    private sourceNode: MediaStreamAudioSourceNode | null = null;
     private isRecording: boolean = false;
-    private audioChunks: Blob[] = [];
+    private audioData: Float32Array[] = [];
     private resultCallback: ((result: string, final: boolean) => void) | null = null;
-    private recordingInterval: number = 3000; // 3s chunks to reduce silence and hallucinations
+    private recordingInterval: number = 3000; // 3s chunks
     private intervalId: NodeJS.Timeout | null = null;
+    private isStarting: boolean = false;
 
-    constructor(lang: string, model: string, microphoneId: string | null = null) {
+    constructor(lang: string, model: string, vadThreshold: number = 0.005, microphoneId: string | null = null) {
         super(lang);
         this.model = model;
+        this.vadThreshold = vadThreshold;
         this.selectedMicrophoneId = microphoneId;
 
-        info(`[WHISPER] Initialized with model: ${model}, language: ${lang}`);
+        info(`[WHISPER] Initialized with model: ${model}, language: ${lang}, vadThreshold: ${vadThreshold}`);
     }
 
     async start(): Promise<void> {
+        if (this.isStarting || this.running) return;
+        this.isStarting = true;
+
         try {
             info("[WHISPER] Starting Whisper recognition");
 
@@ -33,12 +41,11 @@ export class Whisper extends Recognizer {
                 if (this.resultCallback) {
                     this.resultCallback(`Error: ${errorMsg}`, true);
                 }
+                this.isStarting = false;
                 return;
             }
 
             // Get microphone access
-            // Don't constrain sample rate - let browser use native rate, we'll resample later
-            // Disable aggressive audio processing to prevent audio suppression and distortion
             const constraints: MediaStreamConstraints = {
                 audio: {
                     deviceId: this.selectedMicrophoneId ? { exact: this.selectedMicrophoneId } : undefined,
@@ -50,21 +57,34 @@ export class Whisper extends Recognizer {
             };
 
             this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Set up AudioContext for raw PCM capture at exactly 16kHz
+            this.audioContext = new AudioContext({ sampleRate: 16000 });
+            this.sourceNode = this.audioContext.createMediaStreamSource(this.audioStream);
+            this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
-            // Set up MediaRecorder
-            const mimeType = this.getSupportedMimeType();
-            this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType });
+            this.audioData = [];
 
-            this.mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    this.audioChunks.push(event.data);
-                }
+            this.scriptProcessor.onaudioprocess = (e) => {
+                if (!this.running) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                this.audioData.push(new Float32Array(inputData));
+                
+                // Mute output to prevent echo
+                e.outputBuffer.getChannelData(0).fill(0);
             };
 
-            // onstop is managed by startRecordingLoop for seamless chunk chaining
+            this.sourceNode.connect(this.scriptProcessor);
+            this.scriptProcessor.connect(this.audioContext.destination);
 
             this.running = true;
-            this.startRecordingLoop();
+            this.isRecording = true;
+
+            if (this.resultCallback) {
+                this.resultCallback("Listening...", false);
+            }
+
+            this.startProcessingLoop();
 
             info("[WHISPER] Recognition started successfully");
         } catch (err: unknown) {
@@ -76,6 +96,8 @@ export class Whisper extends Recognizer {
             if (this.resultCallback) {
                 this.resultCallback(`Error starting Whisper: ${errorMessage}`, true);
             }
+        } finally {
+            this.isStarting = false;
         }
     }
 
@@ -85,12 +107,24 @@ export class Whisper extends Recognizer {
         this.isRecording = false;
 
         if (this.intervalId) {
-            clearTimeout(this.intervalId); // intervalId now holds a setTimeout handle
+            clearInterval(this.intervalId);
             this.intervalId = null;
         }
 
-        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-            this.mediaRecorder.stop();
+        if (this.scriptProcessor) {
+            this.scriptProcessor.disconnect();
+            this.scriptProcessor.onaudioprocess = null;
+            this.scriptProcessor = null;
+        }
+
+        if (this.sourceNode) {
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+        }
+
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+            this.audioContext.close();
+            this.audioContext = null;
         }
 
         if (this.audioStream) {
@@ -99,8 +133,7 @@ export class Whisper extends Recognizer {
             this.audioStream = null;
         }
 
-        this.mediaRecorder = null;
-        this.audioChunks = [];
+        this.audioData = [];
     }
 
     restart(): void {
@@ -153,85 +186,60 @@ export class Whisper extends Recognizer {
         }
     }
 
-    private startRecordingLoop(): void {
-        if (!this.running || !this.mediaRecorder) return;
-
-        const startChunk = () => {
-            if (!this.running || !this.mediaRecorder) return;
-            if (this.mediaRecorder.state !== 'inactive') return;
-
-            this.audioChunks = [];
-            this.mediaRecorder.start();
-            this.isRecording = true;
-
-            if (this.resultCallback) {
-                this.resultCallback("Listening...", false);
-            }
-
-            // Schedule the end of this chunk
-            this.intervalId = setTimeout(() => {
-                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-                    this.mediaRecorder.stop();
-                    this.isRecording = false;
-                    if (this.resultCallback) {
-                        this.resultCallback("Processing...", false);
-                    }
-                }
-            }, this.recordingInterval);
-        };
-
-        // Chain recordings via onstop: as soon as one chunk ends, the next begins
-        // immediately with zero gap. processAudioChunks() is safe to call here
-        // because it constructs its Blob synchronously before its first await,
-        // so resetting audioChunks for the new chunk won't race with in-flight
-        // processing of the previous one.
-        this.mediaRecorder.onstop = () => {
-            this.processAudioChunks();
-            startChunk();
-        };
-
-        // Kick off the first chunk immediately
-        startChunk();
+    setVadThreshold(threshold: number): void {
+        info(`[WHISPER] Setting VAD threshold to: ${threshold}`);
+        this.vadThreshold = threshold;
     }
 
-    private async processAudioChunks(): Promise<void> {
-        if (this.audioChunks.length === 0) {
-            info(`[WHISPER] No audio chunks to process`);
-            return;
-        }
+    private startProcessingLoop(): void {
+        this.intervalId = setInterval(() => {
+            if (!this.running) return;
+            this.processAudioData();
+        }, this.recordingInterval);
+    }
+
+    private async processAudioData(): Promise<void> {
+        if (this.audioData.length === 0) return;
+
+        // Extract current data and clear for next chunk seamlessly
+        const currentData = this.audioData;
+        this.audioData = [];
 
         try {
-            // Combine audio chunks into a single blob
-            // Use the actual mime type from the recorder, not a hardcoded one
-            const mimeType = this.mediaRecorder?.mimeType || this.getSupportedMimeType();
-            const audioBlob = new Blob(this.audioChunks, { type: mimeType });
-            info(`[WHISPER] Processing audio blob of size: ${audioBlob.size} bytes, type: ${mimeType}`);
-            this.audioChunks = []; // Clear chunks
-
-            // Convert to WAV format using AudioContext
-            // This is necessary because the backend expects WAV format
-            const wavData = await this.convertToWav(audioBlob);
-
-            if (!wavData || wavData.length === 0) {
-                info(`[WHISPER] Failed to convert audio to WAV format - likely silence or corrupted chunk, skipping`);
-                // Reset to listening state without showing error to user
-                if (this.resultCallback) {
-                    this.resultCallback("Listening...", false);
-                }
-                return;
+            // Calculate total length
+            const totalLength = currentData.reduce((acc, val) => acc + val.length, 0);
+            const combinedData = new Float32Array(totalLength);
+            let offset = 0;
+            for (const arr of currentData) {
+                combinedData.set(arr, offset);
+                offset += arr.length;
             }
 
-            info(`[WHISPER] Converted to WAV: ${wavData.length} bytes`);
-            info(`[WHISPER] Sending audio data to Rust backend`);
+            // Convert to 16-bit PCM
+            const pcmData = new Int16Array(totalLength);
+            for (let i = 0; i < totalLength; i++) {
+                const sample = Math.max(-1, Math.min(1, combinedData[i]));
+                pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+            }
+
+            // Create WAV file buffer
+            const wavBuffer = this.encodeWav(pcmData, 16000);
+            const wavData = new Uint8Array(wavBuffer);
+
+            info(`[WHISPER] Processing raw PCM chunk: ${wavData.length} bytes`);
+
+            if (this.resultCallback) {
+                this.resultCallback("Processing...", false);
+            }
 
             // Send to Rust backend for Whisper processing
             const result = await invoke('whisper_transcribe', {
                 audioData: Array.from(wavData),
                 model: this.model,
-                language: this.language
+                language: this.language,
+                vadThreshold: this.vadThreshold
             }) as string;
 
-            // Debug logging to see what we actually get back
             info(`[WHISPER] Raw transcription result: "${result}" (length: ${result?.length || 0})`);
 
             if (result && result.trim().length > 0 && this.resultCallback) {
@@ -239,7 +247,6 @@ export class Whisper extends Recognizer {
                 this.resultCallback(result.trim(), true); // Always final with Whisper
             } else {
                 info(`[WHISPER] Empty or null transcription result - no speech detected or language mismatch`);
-                // Even with no speech, we should still notify the UI that processing completed
                 if (this.resultCallback) {
                     this.resultCallback("", true); // Send empty result to indicate completion
                 }
@@ -248,74 +255,9 @@ export class Whisper extends Recognizer {
             const errorMessage = err instanceof Error ? err.message : String(err);
             error(`[WHISPER] Error processing audio: ${errorMessage}`);
             
-            // Don't show processing errors to UI - just reset to listening state
-            // Most errors here are benign (silence, corrupted chunks, etc.)
             if (this.resultCallback) {
                 this.resultCallback("Listening...", false);
             }
-        }
-    }
-
-    // Convert audio blob to WAV format using AudioContext
-    private async convertToWav(audioBlob: Blob): Promise<Uint8Array> {
-        try {
-            const arrayBuffer = await audioBlob.arrayBuffer();
-            // Use default sample rate for decoding, we'll resample to 16kHz after
-            const audioContext = new AudioContext();
-
-            // Decode the audio data
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-            // Get mono audio data (average channels if stereo)
-            let monoData: Float32Array;
-            if (audioBuffer.numberOfChannels > 1) {
-                const channel0 = audioBuffer.getChannelData(0);
-                const channel1 = audioBuffer.getChannelData(1);
-                monoData = new Float32Array(channel0.length);
-                for (let i = 0; i < channel0.length; i++) {
-                    monoData[i] = (channel0[i] + channel1[i]) / 2;
-                }
-            } else {
-                monoData = audioBuffer.getChannelData(0);
-            }
-
-            // Resample to 16kHz if needed
-            const sourceSampleRate = audioBuffer.sampleRate;
-            if (sourceSampleRate !== 16000) {
-                info(`[WHISPER] Resampling from ${sourceSampleRate}Hz to 16000Hz`);
-                const ratio = sourceSampleRate / 16000;
-                const targetLength = Math.floor(monoData.length / ratio);
-                const resampled = new Float32Array(targetLength);
-                
-                for (let i = 0; i < targetLength; i++) {
-                    const srcIndex = Math.floor(i * ratio);
-                    if (srcIndex < monoData.length) {
-                        resampled[i] = monoData[srcIndex];
-                    }
-                }
-                monoData = resampled;
-            }
-
-            // Convert to 16-bit PCM
-            const pcmData = new Int16Array(monoData.length);
-            for (let i = 0; i < monoData.length; i++) {
-                const sample = Math.max(-1, Math.min(1, monoData[i]));
-                pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-            }
-
-            // Create WAV file
-            const wavBuffer = this.encodeWav(pcmData, 16000);
-
-            await audioContext.close();
-
-            return new Uint8Array(wavBuffer);
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            error(`[WHISPER] Error converting audio to WAV: ${errorMessage}`);
-            
-            // Don't show conversion errors to UI - these are often just silence or corrupted chunks
-            // Return empty data and let the processAudioChunks function handle it gracefully
-            return new Uint8Array(0);
         }
     }
 
@@ -351,23 +293,6 @@ export class Whisper extends Recognizer {
         }
 
         return buffer;
-    }
-
-    private getSupportedMimeType(): string {
-        const mimeTypes = [
-            'audio/webm;codecs=opus',
-            'audio/webm',
-            'audio/mp4',
-            'audio/wav'
-        ];
-
-        for (const mimeType of mimeTypes) {
-            if (MediaRecorder.isTypeSupported(mimeType)) {
-                return mimeType;
-            }
-        }
-
-        return 'audio/webm'; // Fallback
     }
 
     private async isModelDownloaded(): Promise<boolean> {

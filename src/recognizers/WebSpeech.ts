@@ -1,12 +1,34 @@
 import { Recognizer } from "./recognizer";
 import { info, error, debug } from '@tauri-apps/plugin-log';
 
+// ─── Extended type declarations for modern Web Speech API ────────────────────
+// Chrome/Edge added processLocally, SpeechRecognition.available(), and
+// SpeechRecognition.install() in 2025/2026.  Tauri's bundled WebView2 on
+// Windows is affected by a known Edge bug (Edge ≥ 134) where the cloud speech
+// backend intermittently returns "network" errors.  On-device processing
+// bypasses the cloud entirely and fixes the issue.
 declare global {
     interface Window {
         webkitSpeechRecognition: any;
         SpeechRecognition: any;
     }
 }
+
+type OnDeviceAvailability = "available" | "downloadable" | "downloading" | "unavailable";
+
+interface SpeechRecognitionAvailableOptions {
+    langs: string[];
+    processLocally?: boolean;
+    quality?: "command" | "dictation" | "conversation";
+}
+
+interface SpeechRecognitionConstructor {
+    new(): any;
+    available?: (options: SpeechRecognitionAvailableOptions) => Promise<OnDeviceAvailability>;
+    install?: (options: SpeechRecognitionAvailableOptions) => Promise<boolean>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export class WebSpeech extends Recognizer {
     recognition: any;
@@ -23,25 +45,135 @@ export class WebSpeech extends Recognizer {
     // Prevents handleOnEnd from scheduling a competing restart while the
     // health check is already performing its own stop → start cycle.
     private isHealthChecking: boolean = false;
+    // Track consecutive network errors to prevent infinite restart loops
+    private consecutiveNetworkErrors: number = 0;
+    private maxConsecutiveNetworkErrors: number = 3;
+
+    // On-device processing state.
+    // We attempt processLocally=true first (avoids Edge/WebView2 cloud bug).
+    // Falls back to cloud (processLocally=false) when on-device is unavailable.
+    private processLocally: boolean = false;
+    private processLocallyChecked: boolean = false;
+    private onDeviceInstallInProgress: boolean = false;
+
+    // Tracks whether the underlying SpeechRecognition object is currently
+    // active (between start() and the next onend/onerror).  Used to suppress
+    // duplicate start() calls that arrive from concurrent callers.
+    private _recognitionActive: boolean = false;
 
     constructor(lang: string, microphoneId: string | null = null) {
         super(lang);
         this.selectedMicrophoneId = microphoneId;
         this.lang = lang;
-        
-        // Use the standard SpeechRecognition object if available
         this.initRecognition();
     }
 
+    // ── On-device availability check ─────────────────────────────────────────
+
+    /**
+     * Checks whether the current language supports on-device (local) speech
+     * recognition.  If available, sets processLocally=true so future
+     * recognition instances bypass the cloud backend that is broken in
+     * Edge ≥ 134 / WebView2.  Resolves immediately when not supported by the
+     * browser or when the check was already performed.
+     */
+    private async checkOnDeviceAvailability(): Promise<void> {
+        if (this.processLocallyChecked) return;
+        this.processLocallyChecked = true;
+
+        const SR: SpeechRecognitionConstructor | undefined =
+            window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SR || typeof SR.available !== "function") {
+            info("[WEBSPEECH] On-device speech recognition API not available in this browser (older WebView2/Chrome)");
+            this.processLocally = false;
+            return;
+        }
+
+        try {
+            const result = await SR.available({
+                langs: [this.lang],
+                processLocally: true,
+                quality: "dictation",
+            });
+
+            info(`[WEBSPEECH] On-device availability for "${this.lang}": ${result}`);
+
+            if (result === "available") {
+                info("[WEBSPEECH] On-device recognition available — enabling processLocally to avoid Edge/WebView2 cloud bug");
+                this.processLocally = true;
+            } else if (result === "downloadable" || result === "downloading") {
+                // Language pack exists but needs downloading.  Start the
+                // download in the background; use cloud for now.
+                info(`[WEBSPEECH] On-device language pack ${result} for "${this.lang}" — triggering download`);
+                this.processLocally = false;
+                this.triggerLanguagePackInstall();
+            } else {
+                // "unavailable" — no on-device support, must use cloud
+                info(`[WEBSPEECH] On-device recognition unavailable for "${this.lang}" — falling back to cloud`);
+                this.processLocally = false;
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            error(`[WEBSPEECH] Error checking on-device availability: ${msg}`);
+            this.processLocally = false;
+        }
+
+        // Recreate the recognition object now that we know the preferred mode
+        this.initRecognition();
+    }
+
+    /**
+     * Silently attempts to download the on-device language pack.  When done,
+     * re-enables processLocally and reinitialises the recognition object so
+     * subsequent sessions use the local engine.
+     */
+    private triggerLanguagePackInstall(): void {
+        if (this.onDeviceInstallInProgress) return;
+
+        const SR: SpeechRecognitionConstructor | undefined =
+            window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SR || typeof SR.install !== "function") return;
+
+        this.onDeviceInstallInProgress = true;
+        info(`[WEBSPEECH] Starting background download of on-device language pack for "${this.lang}"`);
+
+        SR.install({ langs: [this.lang], processLocally: true, quality: "dictation" })
+            .then((success: boolean) => {
+                this.onDeviceInstallInProgress = false;
+                if (success) {
+                    info(`[WEBSPEECH] On-device language pack for "${this.lang}" installed — switching to local processing`);
+                    this.processLocally = true;
+                    // Reinitialize so the next session uses on-device
+                    this.processLocallyChecked = true;
+                    this.initRecognition();
+                    // If we are currently running, restart to pick up the new mode
+                    if (this.running) {
+                        this.restart();
+                    }
+                } else {
+                    error(`[WEBSPEECH] On-device language pack install failed for "${this.lang}"`);
+                }
+            })
+            .catch((err: unknown) => {
+                this.onDeviceInstallInProgress = false;
+                const msg = err instanceof Error ? err.message : String(err);
+                error(`[WEBSPEECH] Error installing on-device language pack: ${msg}`);
+            });
+    }
+
+    // ── Recognition object lifecycle ─────────────────────────────────────────
+
     private initRecognition(): void {
-        info(`[WEBSPEECH] Initializing recognition with language: ${this.lang}`);
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
+        info(`[WEBSPEECH] Initializing recognition — lang: ${this.lang}, processLocally: ${this.processLocally}`);
+        const SpeechRecognition: any = window.SpeechRecognition || window.webkitSpeechRecognition;
+
         if (!SpeechRecognition) {
             error("[WEBSPEECH] SpeechRecognition API not available in this browser");
             return;
         }
-        
+
         try {
             this.recognition = new SpeechRecognition();
             this.recognition.interimResults = true;
@@ -49,17 +181,23 @@ export class WebSpeech extends Recognizer {
             this.recognition.continuous = true;
             this.recognition.lang = this.lang;
 
+            // Use on-device processing when available to avoid the
+            // Edge ≥ 134 / WebView2 cloud speech backend bug.
+            if ("processLocally" in this.recognition) {
+                this.recognition.processLocally = this.processLocally;
+            }
+
             // Set up standard event handlers
             this.recognition.onend = () => this.handleOnEnd();
             this.recognition.onnomatch = () => this.handleOnNoMatch();
             this.recognition.onerror = (e: { error?: string }) => this.handleOnError(e);
             this.recognition.onstart = () => this.handleOnStart();
-            
+
             // Re-attach the result callback if one was previously set
             if (this.resultCallback) {
                 this.recognition.onresult = this.handleOnResult.bind(this);
             }
-            
+
             // Reset reconnect attempts when successfully initialized
             this.reconnectAttempts = 0;
         } catch (err: unknown) {
@@ -68,44 +206,52 @@ export class WebSpeech extends Recognizer {
         }
     }
 
+    // ── Event handlers ────────────────────────────────────────────────────────
+
     private handleOnStart(): void {
-        info("[WEBSPEECH] Recognition started successfully");
+        info(`[WEBSPEECH] Recognition started successfully (processLocally=${this.processLocally})`);
         this.lastActivityTime = Date.now();
         this.reconnectAttempts = 0;
+        this._recognitionActive = true;
+        // NOTE: do NOT reset consecutiveNetworkErrors here.
+        // The browser fires onstart even when the cloud backend is broken —
+        // it fires immediately before the network error.  Resetting here
+        // prevents the error counter from ever accumulating past 1.
+        // The counter is only cleared in handleOnResult (genuine transcription)
+        // and stop() (intentional stop).
     }
 
     private handleOnEnd(): void {
-        // Always check if we should be running, regardless of this.running state
-        // This handles cases where recognition stops due to timeout/idle
+        this._recognitionActive = false;
         const shouldBeRunning = this.running;
-        
-        // If the health check is the one that called stop(), let IT handle the
-        // restart. Trying to restart here too causes "recognition has already
-        // started" errors because both paths race to call recognition.start().
+
         if (shouldBeRunning && !this.isHealthChecking) {
             info("[WEBSPEECH] Recognition ended unexpectedly. Restarting...");
-            
-            // Use exponential backoff for reconnection attempts
+
             const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
             this.reconnectAttempts++;
-            
+
             if (this.reconnectAttempts <= this.maxReconnectAttempts) {
                 info(`[WEBSPEECH] Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-                
+
                 setTimeout(() => {
                     try {
                         this.recognition.start();
+                        this._recognitionActive = true;
                         info("[WEBSPEECH] Recognition restarted successfully");
                     } catch (err: unknown) {
                         const errorMessage = err instanceof Error ? err.message : String(err);
+                        if (errorMessage.includes("already started")) {
+                            info("[WEBSPEECH] Restart skipped — recognition already active");
+                            this._recognitionActive = true;
+                            return;
+                        }
                         error(`[WEBSPEECH] Failed to restart recognition: ${errorMessage}`);
-                        
-                        // If we've failed too many times, reinitialize the recognition object
+
                         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
                             info("[WEBSPEECH] Max reconnect attempts reached, reinitializing recognition");
                             this.initRecognition();
-                            
-                            // Try one more time after reinitializing
+
                             setTimeout(() => {
                                 try {
                                     if (this.running) {
@@ -130,7 +276,6 @@ export class WebSpeech extends Recognizer {
     }
 
     private handleOnNoMatch(): void {
-        // Only try to restart if we're supposed to be running
         if (this.running) {
             info("[WEBSPEECH] No match. Restarting...");
             setTimeout(() => {
@@ -139,7 +284,6 @@ export class WebSpeech extends Recognizer {
                 } catch (err: unknown) {
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Failed to restart recognition after no match: ${errorMessage}`);
-                    // Reset running state if restart failed
                     this.running = false;
                 }
             }, 500);
@@ -149,27 +293,101 @@ export class WebSpeech extends Recognizer {
     private handleOnError(e: { error?: string }): void {
         if (e.error && e.error.trim().length !== 0) {
             error("[WEBSPEECH] Error: " + e.error);
-            
-            // Handle specific error types
+
             if (e.error === 'no-speech') {
                 info("[WEBSPEECH] No speech detected, this is normal");
-                // No need for special handling, the API will auto-restart
                 return;
             } else if (e.error === 'network') {
-                error("[WEBSPEECH] Network error occurred");
-                // Use longer delay for network errors
+                this.consecutiveNetworkErrors++;
+                error(`[WEBSPEECH] Network error occurred (consecutive: ${this.consecutiveNetworkErrors}/${this.maxConsecutiveNetworkErrors}, processLocally=${this.processLocally})`);
+
+                // Network errors in Edge ≥ 134 / WebView2 are caused by a broken
+                // cloud speech backend.  When we've accumulated enough errors,
+                // try switching to on-device processing as a self-healing strategy.
+                if (!this.processLocally && this.consecutiveNetworkErrors >= this.maxConsecutiveNetworkErrors) {
+                    error("[WEBSPEECH] Too many cloud network errors — attempting switch to on-device recognition");
+                    this.processLocallyChecked = false; // force a fresh availability check
+                    this.consecutiveNetworkErrors = 0;
+
+                    // Pause running so handleOnEnd does not schedule a competing
+                    // reconnect while we await the async availability check.
+                    this.running = false;
+                    this.stopHealthCheck();
+
+                    // Re-run availability check, then decide what to do:
+                    // - on-device available → restart with processLocally=true
+                    // - on-device unavailable → hard stop, cloud is broken and
+                    //   there is no fallback; further retries would loop forever
+                    this.checkOnDeviceAvailability().then(() => {
+                        if (this.processLocally) {
+                            // Switched to on-device successfully — restart
+                            this.running = true;
+                            this.restart();
+                        } else {
+                            // On-device is unavailable too: the Web Speech API
+                            // cloud backend is broken (Edge ≥ 134 / WebView2 bug)
+                            // and there is nothing more we can do automatically.
+                            error("[WEBSPEECH] Cloud backend broken and on-device unavailable — stopping. Switch to Whisper or check internet/Edge settings.");
+                            if (this.resultCallback) {
+                                this.resultCallback("[ERROR: Web Speech API unavailable (Edge/WebView2 cloud bug). Please switch to Whisper in Settings, or check your internet connection.]", true);
+                            }
+                        }
+                    });
+                    return;
+                }
+
+                // Already using on-device and still getting network errors — unusual,
+                // but treat as a hard stop to avoid infinite loops.
+                if (this.processLocally && this.consecutiveNetworkErrors >= this.maxConsecutiveNetworkErrors) {
+                    error("[WEBSPEECH] Too many consecutive errors even with on-device recognition. Stopping.");
+                    this.running = false;
+                    this.stopHealthCheck();
+
+                    if (this.resultCallback) {
+                        this.resultCallback("[ERROR: Speech recognition unavailable. Check microphone settings.]", true);
+                    }
+                    return;
+                }
+
+                const delay = Math.min(2000 * Math.pow(2, this.consecutiveNetworkErrors - 1), 10000);
                 if (this.running) {
-                    setTimeout(() => this.restart(), 2000);
+                    info(`[WEBSPEECH] Will retry in ${delay}ms...`);
+                    setTimeout(() => {
+                        if (this.running) {
+                            this.restart();
+                        }
+                    }, delay);
                 }
                 return;
             } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
                 error("[WEBSPEECH] Speech recognition permission denied");
                 this.running = false;
+                this.stopHealthCheck();
+
+                if (this.resultCallback) {
+                    this.resultCallback("[ERROR: Microphone permission denied. Please allow microphone access.]", true);
+                }
+                return;
+            } else if (e.error === 'language-not-supported') {
+                // Fired when processLocally=true but the language pack is missing.
+                // Trigger a pack install and fall back to cloud for now.
+                error(`[WEBSPEECH] Language pack not available on-device for "${this.lang}" — falling back to cloud and triggering install`);
+                this.processLocally = false;
+                this.initRecognition();
+                this.triggerLanguagePackInstall();
+
+                if (this.running) {
+                    setTimeout(() => {
+                        try { this.recognition.start(); } catch (_) { /* ignore */ }
+                    }, 500);
+                }
+                return;
+            } else if (e.error === 'aborted') {
+                info("[WEBSPEECH] Recognition aborted, this is usually normal during restart");
                 return;
             }
         }
 
-        // Only try to restart if we're supposed to be running
         if (this.running) {
             info("[WEBSPEECH] Recovering from error. Restarting...");
             setTimeout(() => {
@@ -178,58 +396,81 @@ export class WebSpeech extends Recognizer {
                 } catch (err: unknown) {
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Failed to restart recognition after error: ${errorMessage}`);
-                    // Reset running state if restart failed
                     this.running = false;
                 }
             }, 500);
         }
     }
 
+    // ── Public interface ──────────────────────────────────────────────────────
+
     async start(): Promise<void> {
+        // Guard: if the underlying recognition object is already active, skip
+        // silently.  Multiple callers (VRCTalk useEffects + delayed starts) can
+        // race to call start(); duplicate calls produce "already started" errors
+        // that confuse the error-counting logic.
+        if (this.running && this._recognitionActive) {
+            info("[WEBSPEECH] start() called while already running — ignoring duplicate");
+            return;
+        }
+
         this.running = true;
         this.lastActivityTime = Date.now();
         this.reconnectAttempts = 0;
-        
-        // Start health check
+        // NOTE: do NOT reset consecutiveNetworkErrors here — it must survive
+        // across restart() calls so that persistent network failures accumulate
+        // and trigger the on-device fallback.  It is only cleared in
+        // handleOnStart() (successful cloud/on-device connection) and stop().
+
+        // Perform on-device check on first start (non-blocking — the
+        // check reinitialises the recognition object when done, and if
+        // we're already starting we just start with whatever mode is
+        // current and the next restart will pick up the new setting).
+        if (!this.processLocallyChecked) {
+            // Fire-and-forget; initRecognition() at the end of the check
+            // will update the object before the first restart.
+            this.checkOnDeviceAvailability();
+        }
+
         this.startHealthCheck();
-        
+
         try {
-            // Note: Web Speech API always uses the browser/system default microphone
-            // There is no way to programmatically select a specific device
-            // Users must change their system default input device in Windows Sound Settings
-            
-            // Start recognition (uses system default mic)
             this.recognition.start();
-            info("[WEBSPEECH] Recognition started using system default microphone");
+            this._recognitionActive = true;
+            info(`[WEBSPEECH] Recognition started (processLocally=${this.processLocally})`);
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
-            error(`[WEBSPEECH] Error starting recognition: ${errorMessage}`);
-            // Reset running state if we failed to start
-            this.running = false;
+            // "already started" is a benign race — don't treat it as a real failure
+            if (errorMessage.includes("already started")) {
+                info("[WEBSPEECH] start() skipped — recognition already active");
+                this._recognitionActive = true;
+            } else {
+                error(`[WEBSPEECH] Error starting recognition: ${errorMessage}`);
+                this.running = false;
+                this._recognitionActive = false;
+            }
         }
     }
 
     stop(): void {
         this.running = false;
-        
-        // Stop health check
+        this._recognitionActive = false;
+        this.consecutiveNetworkErrors = 0;
         this.stopHealthCheck();
-        
+
         try {
             this.recognition.stop();
-            
-            // Clean up audio resources
+
             if (this.audioStream) {
-                const tracks = this.audioStream.getTracks();
-                tracks.forEach(track => track.stop());
+                this.audioStream.getTracks().forEach(track => track.stop());
                 this.audioStream = null;
             }
-            
+
             if (this.audioContext) {
                 this.audioContext.close();
                 this.audioContext = null;
             }
-            
+
             info("[WEBSPEECH] Recognition stopped!");
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
@@ -241,50 +482,40 @@ export class WebSpeech extends Recognizer {
         info("[WEBSPEECH] Forcing restart of recognition");
         const wasRunning = this.running;
         const currentMicId = this.selectedMicrophoneId;
-        
+
         try {
-            // First, aggressively clean up ALL audio resources
             this.running = false;
+            this._recognitionActive = false;
             this.reconnectAttempts = 0;
-            
-            // Stop health check immediately
+            // Do NOT reset consecutiveNetworkErrors here — errors must
+            // accumulate across restart() calls to trigger the on-device fallback.
+
             this.stopHealthCheck();
-            
-            // Stop the recognition API
+
             try {
                 this.recognition.stop();
-            } catch (e) {
-                // Ignore errors when stopping - it might already be stopped
-            }
-            
-            // Clean up audio streams completely
+            } catch (_) { /* ignore */ }
+
             if (this.audioStream) {
-                const tracks = this.audioStream.getTracks();
-                tracks.forEach(track => {
+                this.audioStream.getTracks().forEach(track => {
                     track.stop();
                     info(`[WEBSPEECH] Stopped audio track: ${track.label || track.id}`);
                 });
                 this.audioStream = null;
             }
-            
+
             if (this.audioContext) {
                 this.audioContext.close();
                 this.audioContext = null;
             }
-            
-            // Force garbage collection of old mic by clearing reference
+
             this.selectedMicrophoneId = null;
-            
-            // Wait a moment for browser to release the old device
+
             setTimeout(() => {
-                // Restore mic selection
                 this.selectedMicrophoneId = currentMicId;
-                
-                // Reinitialize the recognition object with fresh settings
                 info("[WEBSPEECH] Reinitializing recognition object during restart");
                 this.initRecognition();
-                
-                // Start if it was running before
+
                 if (wasRunning) {
                     this.running = true;
                     setTimeout(() => {
@@ -302,12 +533,11 @@ export class WebSpeech extends Recognizer {
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
             error(`[WEBSPEECH] Error during restart: ${errorMessage}`);
-            
-            // Attempt recovery
+
             this.reconnectAttempts = 0;
             this.selectedMicrophoneId = currentMicId;
             this.initRecognition();
-            
+
             if (wasRunning) {
                 this.running = true;
                 setTimeout(() => this.start(), 1000);
@@ -318,73 +548,64 @@ export class WebSpeech extends Recognizer {
     set_lang(lang: string): void {
         try {
             info(`[WEBSPEECH] Setting language from ${this.recognition.lang} to ${lang}`);
-            
-            // If it's the same language, no need to do anything
+
             if (this.recognition.lang === lang) {
                 info(`[WEBSPEECH] Language is already set to ${lang}, no change needed`);
                 return;
             }
-            
+
             this.recognition.lang = lang;
             this.lang = lang;
-            
-            // For language changes, it's safer to recreate the recognition object completely
+
+            // Reset on-device check state so the new language is probed
+            this.processLocallyChecked = false;
+            this.processLocally = false;
+
             const wasRunning = this.running;
-            info(`[WEBSPEECH] Language change - was running: ${wasRunning}`);
-            
+            info(`[WEBSPEECH] Language change — was running: ${wasRunning}`);
+
             try {
-                // First try to stop the current recognition instance
                 this.stop();
             } catch (err: unknown) {
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 error(`[WEBSPEECH] Error stopping recognition during language change: ${errorMessage}`);
-                // Continue anyway to attempt a clean restart
             }
-            
-            // Reset reconnect attempts on language change
+
             this.reconnectAttempts = 0;
-            
-            // Short delay to ensure the previous session is fully terminated
+
             setTimeout(() => {
                 try {
                     info("[WEBSPEECH] Creating new recognition instance for language change");
-                    // Clean up any existing resources
+
                     if (this.audioStream) {
-                        const tracks = this.audioStream.getTracks();
-                        tracks.forEach(track => track.stop());
+                        this.audioStream.getTracks().forEach(track => track.stop());
                         this.audioStream = null;
                     }
-                    
+
                     if (this.audioContext) {
                         this.audioContext.close();
                         this.audioContext = null;
                     }
-                    
-                    // Initialize a fresh recognition instance with proper handlers
+
                     this.initRecognition();
-                    
-                    // Always restart recognition after language change if it was running before
+
                     if (wasRunning) {
                         info("[WEBSPEECH] Restarting recognition with new language");
-                        this.running = true; // Ensure running state is set before starting
-                        setTimeout(() => {
-                            this.start();
-                        }, 200);
+                        this.running = true;
+                        // checkOnDeviceAvailability will be called inside start()
+                        setTimeout(() => { this.start(); }, 200);
                     } else {
                         info("[WEBSPEECH] Recognition was not running, language updated");
                     }
                 } catch (err: unknown) {
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Error recreating recognition instance: ${errorMessage}`);
-                    
-                    // One final attempt with the original method
+
                     try {
                         if (wasRunning) {
                             info("[WEBSPEECH] Attempting final restart after error");
-                            this.running = true; // Ensure running state is set
-                            setTimeout(() => {
-                                this.start();
-                            }, 500);
+                            this.running = true;
+                            setTimeout(() => { this.start(); }, 500);
                         }
                     } catch (finalErr: unknown) {
                         const finalErrorMsg = finalErr instanceof Error ? finalErr.message : String(finalErr);
@@ -398,36 +619,31 @@ export class WebSpeech extends Recognizer {
             error(`[WEBSPEECH] Error in set_lang: ${errorMessage}`);
         }
     }
-    
+
     set_microphone(deviceId: string | null): void {
         if (deviceId === this.selectedMicrophoneId) {
             debug(`[WEBSPEECH] Microphone unchanged: ${deviceId || 'default'}`);
             return;
         }
-        
+
         info(`[WEBSPEECH] Changing microphone from ${this.selectedMicrophoneId || 'default'} to ${deviceId || 'default'}`);
         this.selectedMicrophoneId = deviceId;
-        
-        // Reset reconnect attempts on microphone change
         this.reconnectAttempts = 0;
-        
-        // Check if the microphone is available before restarting
+
         if (deviceId) {
             navigator.mediaDevices.enumerateDevices()
                 .then(devices => {
                     const audioInputs = devices.filter(device => device.kind === "audioinput");
                     const selectedDevice = audioInputs.find(device => device.deviceId === deviceId);
-                    
+
                     if (selectedDevice) {
                         info(`[WEBSPEECH] Found selected microphone: ${selectedDevice.label || deviceId}`);
-                        // Restart recognition with the new microphone
                         this.restart();
                     } else {
                         error(`[WEBSPEECH] Error: Selected microphone ${deviceId} not found in available devices`);
-                        const availableMics = audioInputs.map(device => `${device.label || 'Unnamed'} (${device.deviceId.substring(0, 8)}...)`).join(', ');
+                        const availableMics = audioInputs.map(d => `${d.label || 'Unnamed'} (${d.deviceId.substring(0, 8)}...)`).join(', ');
                         error(`[WEBSPEECH] Available microphones: ${availableMics || 'None'}`);
-                        
-                        // Fall back to default microphone
+
                         info(`[WEBSPEECH] Falling back to default microphone`);
                         this.selectedMicrophoneId = null;
                         this.restart();
@@ -436,13 +652,11 @@ export class WebSpeech extends Recognizer {
                 .catch(err => {
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Error accessing media devices when changing microphone: ${errorMessage}`);
-                    // Fall back to default microphone
                     info(`[WEBSPEECH] Falling back to default microphone due to error`);
                     this.selectedMicrophoneId = null;
                     this.restart();
                 });
         } else {
-            // If deviceId is null, we're intentionally using the default microphone
             info(`[WEBSPEECH] Using default system microphone`);
             this.restart();
         }
@@ -461,19 +675,18 @@ export class WebSpeech extends Recognizer {
         if (!this.resultCallback) return;
 
         if (event.results.length > 0) {
-            // Update activity time and reset reconnect attempts on every result
             this.lastActivityTime = Date.now();
             this.reconnectAttempts = 0;
+            // Receiving actual transcription is proof the backend is working
+            this.consecutiveNetworkErrors = 0;
 
             let interimTranscript = '';
-            
-            // Iterate through all results starting from the changed index
+
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 const result = event.results[i];
                 const transcript = result[0].transcript.trim();
-                
+
                 if (result.isFinal) {
-                    // Send final results immediately if they have content
                     if (transcript.length > 0) {
                         this.resultCallback(transcript, true);
                     }
@@ -481,46 +694,35 @@ export class WebSpeech extends Recognizer {
                     interimTranscript += transcript;
                 }
             }
-            
-            // If we have an interim transcript, send it
-            // Only send interim if the last result in the event isn't final
-            // (If it was final, we already sent it, and we don't want to overwrite with empty interim)
+
             if (event.results[event.results.length - 1].isFinal === false) {
                 this.resultCallback(interimTranscript.trim(), false);
             }
         }
     }
 
+    // ── Health check ──────────────────────────────────────────────────────────
+
     private startHealthCheck(): void {
-        // Clear any existing health check
         this.stopHealthCheck();
-        
-        // Check every 10 seconds if recognition is still active
+
         this.healthCheckInterval = setInterval(() => {
             if (!this.running) {
-                // If we're not supposed to be running, stop the health check
                 this.stopHealthCheck();
                 return;
             }
-            
+
             const timeSinceLastActivity = Date.now() - this.lastActivityTime;
-            
-            // If recognition has been idle for too long, restart it
+
             if (timeSinceLastActivity > this.maxIdleTime) {
                 info(`[WEBSPEECH] Health check: Recognition idle for ${timeSinceLastActivity}ms. Restarting...`);
                 this.lastActivityTime = Date.now();
-                
-                // Raise the guard BEFORE calling stop() so that the onend event
-                // that stop() triggers does NOT cause handleOnEnd to schedule a
-                // competing restart at a different delay.
+
                 this.isHealthChecking = true;
-                
+
                 try {
                     this.recognition.stop();
                     setTimeout(() => {
-                        // Always lower the guard when we're done, whether we
-                        // succeed or fail, so handleOnEnd is not permanently
-                        // suppressed if something goes wrong here.
                         this.isHealthChecking = false;
                         if (this.running) {
                             try {
@@ -529,8 +731,7 @@ export class WebSpeech extends Recognizer {
                             } catch (err: unknown) {
                                 const errorMessage = err instanceof Error ? err.message : String(err);
                                 error(`[WEBSPEECH] Health check: Failed to restart: ${errorMessage}`);
-                                
-                                // If restart fails, try reinitializing
+
                                 this.initRecognition();
                                 setTimeout(() => {
                                     if (this.running) {
@@ -541,14 +742,13 @@ export class WebSpeech extends Recognizer {
                         }
                     }, 500);
                 } catch (err: unknown) {
-                    // Lower the guard immediately if stop() itself threw
                     this.isHealthChecking = false;
                     const errorMessage = err instanceof Error ? err.message : String(err);
                     error(`[WEBSPEECH] Health check: Error during restart: ${errorMessage}`);
                 }
             }
-        }, 10000); // Check every 10 seconds
-        
+        }, 10000);
+
         info("[WEBSPEECH] Health check started");
     }
 
@@ -559,4 +759,4 @@ export class WebSpeech extends Recognizer {
             info("[WEBSPEECH] Health check stopped");
         }
     }
-} 
+}

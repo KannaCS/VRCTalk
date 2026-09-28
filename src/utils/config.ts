@@ -28,6 +28,7 @@ export type Config = {
     selected_microphone: string | null; // Device ID for selected microphone
     recognizer: string; // "webspeech" or "whisper"
     whisper_model: string; // Selected Whisper model ID
+    vad_threshold: number; // Volume threshold for VAD
     translator: string; // "google", "gemini", or "groq"
     translation_style: string; // "casual", "formal", "polite", "friendly"
     gemini_api_key: string; // Gemini API key for translation
@@ -100,8 +101,9 @@ export const DEFAULT_CONFIG: Config = {
     secondary_target_language: null, // Disabled by default
     mode: 0,
     selected_microphone: null, // Default to system default microphone
-    recognizer: "webspeech", // Default to WebSpeech
+    recognizer: "groqstt", // Default to Groq Whisper cloud STT
     whisper_model: "base", // Default Whisper model
+    vad_threshold: 0.010, // Default VAD threshold — adjust in Settings if neededse floor
     translator: "groq", // Default to Groq for translation
     translation_style: "casual", // Default translation style
     gemini_api_key: "", // Empty by default
@@ -205,10 +207,15 @@ export function validateConfig(config: Config): Config {
     validated.selected_microphone = null;
     
     // Recognizer settings
-    if (config.recognizer && ['webspeech', 'whisper'].includes(config.recognizer)) {
+    if (config.recognizer && ['webspeech', 'whisper', 'groqstt'].includes(config.recognizer)) {
         validated.recognizer = config.recognizer;
     }
     if (config.whisper_model) validated.whisper_model = config.whisper_model;
+    if (typeof config.vad_threshold === 'number') {
+        validated.vad_threshold = Math.max(config.vad_threshold, 0.008);
+    } else if (typeof (config as any).whisper_vad_threshold === 'number') {
+        validated.vad_threshold = Math.max((config as any).whisper_vad_threshold, 0.008);
+    }
     
     // Translator settings
     if (config.translator && ['google', 'gemini', 'groq'].includes(config.translator)) {

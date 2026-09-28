@@ -256,7 +256,8 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
 
   const recognizerOptions = [
     { value: 'webspeech', label: 'WebSpeech API' },
-    { value: 'whisper', label: 'OpenAI Whisper' },
+    { value: 'groqstt', label: 'Groq Whisper (Cloud)' },
+    { value: 'whisper', label: 'Whisper (Offline)' },
   ];
 
   const translatorOptions = [
@@ -544,7 +545,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
               <div className="settings-row">
                 <div className="settings-row-info">
                   <div className="settings-row-title">Recognition Engine</div>
-                  <div className="settings-row-description">WebSpeech (online) or Whisper (offline, higher accuracy)</div>
+                  <div className="settings-row-description">WebSpeech (online), Groq Whisper (cloud, fast), or Whisper (offline)</div>
                 </div>
                 <div className="relative" ref={recognizerDropdownRef} style={{ width: '200px' }}>
                   <button
@@ -635,6 +636,45 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                       </button>
                     </div>
                   ))}
+                </div>
+              )}
+              {localConfig.recognizer === 'groqstt' && (
+                <div className="mt-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70 space-y-1">
+                  <div className="flex items-center gap-2 text-white/90 font-medium">
+                    <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Groq Whisper Cloud STT
+                  </div>
+                  <div>Uses Groq's <span className="text-white/90">whisper-large-v3-turbo</span> at 216× real-time speed. Multilingual, ~1–2 s latency per 3 s chunk.</div>
+                  <div>Works with the built-in app keys or your own Groq API key set below. Free tier: generous rate limits.</div>
+                  <div className="text-white/50 text-xs pt-1">Requires internet. Audio is sent to Groq's servers for processing.</div>
+                </div>
+              )}
+
+              {/* VAD Sensitivity — shown for Groq STT and Whisper */}
+              {(localConfig.recognizer === 'groqstt' || localConfig.recognizer === 'whisper') && (
+                <div className="settings-row flex-col items-start gap-2">
+                  <div className="settings-row-info w-full">
+                    <div className="settings-row-title">Mic Sensitivity (VAD Threshold)</div>
+                    <div className="settings-row-description">
+                      Lower = more sensitive (picks up quiet speech). Raise if background noise triggers false detection.
+                      Current: <span className="text-white/90 font-medium">{localConfig.vad_threshold.toFixed(3)}</span>
+                    </div>
+                  </div>
+                  <div className="w-full flex items-center gap-3">
+                    <span className="text-xs text-white/40 w-8 text-right">Low</span>
+                    <input
+                      type="range"
+                      min="0.001"
+                      max="0.03"
+                      step="0.001"
+                      value={localConfig.vad_threshold}
+                      onChange={(e) => updateLocalConfig({ vad_threshold: parseFloat(e.target.value) })}
+                      className="flex-1 accent-accent-400 h-2 cursor-pointer"
+                    />
+                    <span className="text-xs text-white/40 w-8">High</span>
+                  </div>
                 </div>
               )}
             </div>

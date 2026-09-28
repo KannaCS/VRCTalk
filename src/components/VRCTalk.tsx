@@ -6,6 +6,7 @@ import { info, error, warn } from '@tauri-apps/plugin-log';
 import { Recognizer } from '../recognizers/recognizer';
 import { WebSpeech } from '../recognizers/WebSpeech';
 import { Whisper } from '../recognizers/Whisper';
+import { GroqSTT } from '../recognizers/GroqSTT';
 import translateGT from '../translators/google_translate';
 import translateGemini from '../translators/gemini_translate';
 import translateGroq from '../translators/groq_translate';
@@ -26,6 +27,11 @@ interface VRCTalkProps {
 // Global variables for detection queue and lock
 let detectionQueue: string[] = [];
 let lock = false;
+
+// Maximum queued transcriptions. If the queue grows beyond this (e.g. because
+// a hallucination blocked the translation loop for 30 s), drop the oldest
+// entries so VRChat receives recent speech, not a backlog from half a minute ago.
+const MAX_QUEUE_DEPTH = 3;
 
 // Global speech recognition instance to prevent multiple instances
 let globalSpeechRecognizer: Recognizer | null = null;
@@ -83,6 +89,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const [currentRms, setCurrentRms] = useState(0);
 
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
@@ -95,9 +102,6 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   const [targetLanguage, setTargetLanguage] = useState(config.target_language);
   const [isChangingLanguage, setIsChangingLanguage] = useState(false);
   const [typedText, setTypedText] = useState("");
-  const [micStatus, setMicStatus] = useState<'initializing' | 'active' | 'listening' | 'muted' | 'disconnected' | 'error'>(
-    'initializing'
-  );
   const [whisperStatus, setWhisperStatus] = useState<string>("");
   const firstResultRef = useRef(false);
   const [styleDropdownOpen, setStyleDropdownOpen] = useState(false);
@@ -200,9 +204,12 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
     // Check if we need to switch recognizer types
     const currentIsWhisper = globalSpeechRecognizer instanceof Whisper;
+    const currentIsGroqSTT = globalSpeechRecognizer instanceof GroqSTT;
     const shouldBeWhisper = config.recognizer === 'whisper';
+    const shouldBeGroqSTT = config.recognizer === 'groqstt';
+    const needsSwitch = (currentIsWhisper !== shouldBeWhisper) || (currentIsGroqSTT !== shouldBeGroqSTT);
 
-    if (currentIsWhisper !== shouldBeWhisper) {
+    if (needsSwitch) {
       info(`[SR] Recognizer type change detected: switching to ${config.recognizer}`);
 
       // Stop current recognizer
@@ -213,8 +220,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
       // Create new recognizer
       let newRecognizer: Recognizer;
       if (shouldBeWhisper) {
-        newRecognizer = new Whisper(config.source_language, config.whisper_model, config.selected_microphone);
+        newRecognizer = new Whisper(config.source_language, config.whisper_model, config.vad_threshold, config.selected_microphone);
         info(`[SR] Switched to Whisper recognizer with model: ${config.whisper_model}`);
+      } else if (shouldBeGroqSTT) {
+        newRecognizer = new GroqSTT(config.source_language, config.groq_api_key, config.vad_threshold, config.selected_microphone);
+        info(`[SR] Switched to Groq STT recognizer`);
       } else {
         newRecognizer = new WebSpeech(config.source_language, config.selected_microphone);
         info(`[SR] Switched to WebSpeech recognizer`);
@@ -245,7 +255,6 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
           setDefaultMicrophone("Microphone Active");
         }
         firstResultRef.current = firstResultRef.current || isFinal || !!result;
-        setMicStatus(isFinal ? 'active' : 'listening');
 
         // Send typing status if configured
         if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
@@ -266,6 +275,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
         // When we get a final transcript, queue it for processing
         if (isFinal && result.trim().length > 0) {
+          // Drop oldest entries if queue is too deep to avoid sending stale speech
+          if (detectionQueue.length >= MAX_QUEUE_DEPTH) {
+            warn(`[SR] Queue depth ${detectionQueue.length} exceeded limit — dropping ${detectionQueue.length - MAX_QUEUE_DEPTH + 1} old item(s)`);
+            detectionQueue = detectionQueue.slice(-(MAX_QUEUE_DEPTH - 1));
+          }
           detectionQueue.push(result);
           // Force the processing loop to run ASAP
           setTriggerUpdate(prev => !prev);
@@ -285,15 +299,27 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         }, 500);
       }
     }
-    // Handle Whisper model changes
+    // Handle Whisper model and VAD changes
     else if (currentIsWhisper && shouldBeWhisper) {
       const whisperRecognizer = globalSpeechRecognizer as Whisper;
       if (whisperRecognizer.model !== config.whisper_model) {
         info(`[SR] Whisper model change detected: switching to ${config.whisper_model}`);
         whisperRecognizer.setModel(config.whisper_model);
       }
+      if (whisperRecognizer.vadThreshold !== config.vad_threshold) {
+        info(`[SR] Whisper VAD threshold change detected: ${config.vad_threshold}`);
+        whisperRecognizer.setVadThreshold(config.vad_threshold);
+      }
     }
-  }, [config.recognizer, config.whisper_model]);
+    // Handle Groq STT key and VAD changes
+    else if (currentIsGroqSTT && shouldBeGroqSTT) {
+      const groqRecognizer = globalSpeechRecognizer as GroqSTT;
+      if (groqRecognizer.vadThreshold !== config.vad_threshold) {
+        info(`[SR] Groq STT VAD threshold change: ${config.vad_threshold}`);
+        groqRecognizer.setVadThreshold(config.vad_threshold);
+      }
+    }
+  }, [config.recognizer, config.whisper_model, config.vad_threshold, config.groq_api_key]);
 
   // Handle recognition status based on VRC mute status
   useEffect(() => {
@@ -349,6 +375,14 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
       const text = detectionQueue[0].replace(/%/g, "%25");
       detectionQueue = detectionQueue.slice(1);
+
+      // Fast-fail for untranslatable content — single punctuation or very
+      // short strings that Whisper hallucinates on near-silence chunks.
+      // No point retrying these for 30 seconds; just drop them.
+      if (/^[.,!?;:\-–—…\s]+$/.test(text.trim()) || text.trim().length <= 1) {
+        info(`[TRANSLATION] Dropping untranslatable hallucination: "${text.trim()}"`);
+        return;
+      }
 
       lock = true;
       info(`[TRANSLATION] Starting translation. Queue length: ${detectionQueue.length}`);
@@ -821,8 +855,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     // Initialize speech recognition based on config
     let recognizer: Recognizer;
     if (config.recognizer === 'whisper') {
-      recognizer = new Whisper(config.source_language, config.whisper_model, config.selected_microphone);
+      recognizer = new Whisper(config.source_language, config.whisper_model, config.vad_threshold, config.selected_microphone);
       info(`[SR] Initializing Whisper recognizer with model: ${config.whisper_model}`);
+    } else if (config.recognizer === 'groqstt') {
+      recognizer = new GroqSTT(config.source_language, config.groq_api_key, config.vad_threshold, config.selected_microphone);
+      info(`[SR] Initializing Groq STT recognizer`);
     } else {
       recognizer = new WebSpeech(config.source_language, config.selected_microphone);
       info(`[SR] Initializing WebSpeech recognizer`);
@@ -855,7 +892,6 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         setDefaultMicrophone("Microphone Active");
       }
       firstResultRef.current = firstResultRef.current || isFinal || !!result;
-      setMicStatus(isFinal ? 'active' : 'listening');
 
       // Send typing status if configured
       if (config.vrchat_settings.send_typing_status_while_talking || config.mode === 1) {
@@ -876,15 +912,25 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
       // When we get a final transcript, queue it for processing
       if (isFinal && result.trim().length > 0) {
+        // Drop oldest entries if queue is too deep to avoid sending stale speech
+        if (detectionQueue.length >= MAX_QUEUE_DEPTH) {
+          warn(`[SR] Queue depth ${detectionQueue.length} exceeded limit — dropping ${detectionQueue.length - MAX_QUEUE_DEPTH + 1} old item(s)`);
+          detectionQueue = detectionQueue.slice(-(MAX_QUEUE_DEPTH - 1));
+        }
         detectionQueue.push(result);
         // Force the processing loop to run ASAP
         setTriggerUpdate(prev => !prev);
       }
     });
 
-    // Start recognition
-    recognizer.start();
-    info("[SR] Speech recognition started");
+    // To prevent microphone hardware conflicts on Windows between getUserMedia (visualizer) 
+    // and WebSpeech API, we delay the recognizer start slightly.
+    setTimeout(() => {
+      if (globalSpeechRecognizer === recognizer && recognitionActive) {
+        recognizer.start();
+        info("[SR] Speech recognition started after delay");
+      }
+    }, 1500);
 
     return () => {
       clearInterval(microphoneCheckInterval);
@@ -917,20 +963,15 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
   // Derive mic status from recognition/mute states
   useEffect(() => {
-    if (vrcMuted && recognitionActive && config.vrchat_settings.disable_when_muted) {
-      setMicStatus('muted');
-    } else if (recognitionActive && sr) {
+    if (recognitionActive && sr) {
       // Check if SR is initialized (has status method)
       const isRunning = sr.status();
       if (isRunning || audioActive) {
-        setMicStatus(detecting ? 'listening' : 'active');
         // Also update defaultMicrophone if still showing Initializing
         if (defaultMicrophone === "Initializing...") {
           setDefaultMicrophone("Microphone Active");
         }
       }
-    } else if (sr && !recognitionActive) {
-      setMicStatus('muted');
     }
   }, [recognitionActive, vrcMuted, config.vrchat_settings.disable_when_muted, sr, detecting, audioActive, defaultMicrophone]);
 
@@ -952,27 +993,35 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         audioContextRef.current = audioContext;
         analyserRef.current = analyser;
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const dataArray = new Float32Array(analyser.frequencyBinCount);
 
         const checkAudioLevel = () => {
           if (!analyserRef.current) return;
 
-          analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+          analyserRef.current.getFloatTimeDomainData(dataArray);
+          let sumSquares = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+              sumSquares += dataArray[i] * dataArray[i];
+          }
+          const rms = Math.sqrt(sumSquares / dataArray.length);
 
-          // Threshold for "hearing something" - adjust as needed
-          const isActive = average > 15 && recognitionActiveRef.current;
+          setCurrentRms(rms);
+
+          // Threshold for "hearing something" based on VAD config
+          const isActive = rms > (config.vad_threshold || 0.005) && recognitionActiveRef.current;
           setAudioActive(isActive);
 
           animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
         };
 
         checkAudioLevel();
+        info("[AUDIO] Audio monitoring setup complete.");
       } catch (err) {
         error(`[AUDIO] Failed to setup audio monitoring: ${err}`);
       }
     };
 
+    // We start audio monitoring asynchronously.
     setupAudioMonitoring();
 
     return () => {
@@ -1186,23 +1235,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     };
   }, [styleDropdownOpen, sourceDropdownOpen, targetDropdownOpen, secondaryTargetDropdownOpen]);
 
-  // Reflect network status into mic status
-  useEffect(() => {
-    const apply = () => {
-      if (!navigator.onLine) {
-        setMicStatus('disconnected');
-        return;
-      }
-      if (vrcMuted && recognitionActive && config.vrchat_settings.disable_when_muted) {
-        setMicStatus('muted');
-      } else if (recognitionActive && sr?.status()) {
-        setMicStatus(detecting ? 'listening' : 'active');
-      } else if (!recognitionActive) {
-        setMicStatus('active');
-      }
-    };
-    apply();
-  }, [recognitionActive, detecting, vrcMuted, config.vrchat_settings.disable_when_muted, sr]);
+
 
   // Helper to map language code to display tag
   const getLangTag = (langCode: string): string => {
@@ -1694,7 +1727,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
 
       </div>
-
+      
       {/* Manual Input Section (hidden by default, scrollable) */}
 
 

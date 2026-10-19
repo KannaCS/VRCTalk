@@ -255,9 +255,12 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   ];
 
   const recognizerOptions = [
-    { value: 'webspeech', label: 'WebSpeech API' },
     { value: 'groqstt', label: 'Groq Whisper (Cloud)' },
+    // { value: 'chromebridge', label: 'Web Speech (Chrome Bridge)' },
     { value: 'whisper', label: 'Whisper (Offline)' },
+    // WebSpeech is hidden — broken in Tauri/WebView2 (embedded Chromium does
+    // not ship the browser-vendor speech recognition service)
+    // { value: 'webspeech', label: 'WebSpeech API' },
   ];
 
   const translatorOptions = [
@@ -545,7 +548,7 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
               <div className="settings-row">
                 <div className="settings-row-info">
                   <div className="settings-row-title">Recognition Engine</div>
-                  <div className="settings-row-description">WebSpeech (online), Groq Whisper (cloud, fast), or Whisper (offline)</div>
+                  <div className="settings-row-description">Groq Whisper (cloud, fast) or Whisper (offline, no internet needed)</div>
                 </div>
                 <div className="relative" ref={recognizerDropdownRef} style={{ width: '200px' }}>
                   <button
@@ -639,16 +642,63 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
                 </div>
               )}
               {localConfig.recognizer === 'groqstt' && (
-                <div className="mt-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70 space-y-1">
+                <div className="mt-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70 space-y-3">
                   <div className="flex items-center gap-2 text-white/90 font-medium">
                     <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                     Groq Whisper Cloud STT
                   </div>
-                  <div>Uses Groq's <span className="text-white/90">whisper-large-v3-turbo</span> at 216× real-time speed. Multilingual, ~1–2 s latency per 3 s chunk.</div>
-                  <div>Works with the built-in app keys or your own Groq API key set below. Free tier: generous rate limits.</div>
-                  <div className="text-white/50 text-xs pt-1">Requires internet. Audio is sent to Groq's servers for processing.</div>
+
+                  {/* Model selector */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-white/90 text-xs font-medium">Model</div>
+                      <div className="text-white/50 text-xs">Large-v3 is more accurate, Turbo is faster</div>
+                    </div>
+                    <div className="flex rounded-lg overflow-hidden border border-white/10 text-xs">
+                      {[
+                        { value: 'whisper-large-v3', label: 'Large v3' },
+                        { value: 'whisper-large-v3-turbo', label: 'Turbo' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => updateLocalConfig({ groq_stt_model: opt.value })}
+                          className={`px-3 py-1.5 transition-all ${localConfig.groq_stt_model === opt.value ? 'bg-accent-400/30 text-white font-medium' : 'text-white/60 hover:bg-white/10'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Prompt input */}
+                  <div className="space-y-1">
+                    <div className="text-white/90 text-xs font-medium">Transcription Hint (optional)</div>
+                    <div className="text-white/50 text-xs">Add names, places, or domain words to improve accuracy. E.g. "VRChat, avatar, world"</div>
+                    <input
+                      type="text"
+                      value={localConfig.groq_stt_prompt || ''}
+                      onChange={e => updateLocalConfig({ groq_stt_prompt: e.target.value })}
+                      placeholder="e.g. VRChat, avatar, world, Indonesia"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent-400/50"
+                    />
+                  </div>
+
+                  <div className="text-white/50 text-xs">Requires internet. Audio sent to Groq's servers.</div>
+                </div>
+              )}
+
+              {localConfig.recognizer === 'chromebridge' && (
+                <div className="mt-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70 space-y-2">
+                  <div className="flex items-center gap-2 text-white/90 font-medium">
+                    <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+                    </svg>
+                    Web Speech via Chrome Bridge
+                  </div>
+                  <div>Spawns a hidden Chrome/Edge window to use Google's free Web Speech API. Requires <span className="text-white/90">Google Chrome</span> or <span className="text-white/90">Microsoft Edge</span> installed.</div>
+                  <div className="text-white/50 text-xs">A small Chrome window will appear briefly. Audio is sent to Google's servers.</div>
                 </div>
               )}
 

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>VRCTalk Bridge</title>
+<style>
+  body { background: #111; color: #aaa; font-family: monospace; font-size: 12px; margin: 8px; }
+  #status { color: #4af; }
+</style>
+</head>
+<body>
+<div id="status">Initializing...</div>
+<script>
+// VRCTalk Chrome Bridge
+// Runs webkitSpeechRecognition in real Chrome and POSTs results
+// to the local Tauri HTTP bridge server.
+
+const BRIDGE_PORT = 19421;
+const BRIDGE_URL  = `http://127.0.0.1:${BRIDGE_PORT}`;
+
+const status = document.getElementById('status');
+
+// Read config from URL params: ?lang=id&continuous=1
+const params   = new URLSearchParams(location.search);
+const lang     = params.get('lang') || 'id';
+
+function log(msg) {
+  status.textContent = msg;
+  console.log('[BRIDGE]', msg);
+}
+
+function post(endpoint, body) {
+  return fetch(`${BRIDGE_URL}/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => {}); // ignore network errors — Tauri might have stopped
+}
+
+// ── Speech Recognition ───────────────────────────────────────────────────────
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) {
+  log('ERROR: SpeechRecognition not available');
+  post('error', { message: 'SpeechRecognition not available in this browser' });
+} else {
+  const recognition = new SR();
+  recognition.continuous    = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+  recognition.lang          = lang;
+
+  recognition.onstart = () => {
+    log(`Listening (${lang})…`);
+    post('status', { status: 'started' });
+  };
+
+  recognition.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result     = event.results[i];
+      const transcript = result[0].transcript.trim();
+      const isFinal    = result.isFinal;
+      if (transcript.length > 0) {
+        post('result', { transcript, isFinal });
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    log(`Error: ${event.error}`);
+    post('error', { message: event.error });
+    // Auto-restart on recoverable errors
+    if (event.error === 'no-speech' || event.error === 'aborted') {
+      setTimeout(() => { try { recognition.start(); } catch(_) {} }, 500);
+    }
+  };
+
+  recognition.onend = () => {
+    log('Ended — restarting…');
+    setTimeout(() => { try { recognition.start(); } catch(_) {} }, 300);
+  };
+
+  // Start immediately
+  try {
+    recognition.start();
+  } catch(e) {
+    log(`Start failed: ${e.message}`);
+  }
+
+  // Poll for config updates (lang changes etc.) every 2s
+  setInterval(async () => {
+    try {
+      const r = await fetch(`${BRIDGE_URL}/config`);
+      if (r.ok) {
+        const cfg = await r.json();
+        if (cfg.lang && cfg.lang !== recognition.lang) {
+          recognition.lang = cfg.lang;
+          try { recognition.stop(); } catch(_) {}
+          log(`Language → ${cfg.lang}`);
+        }
+      }
+    } catch(_) {}
+  }, 2000);
+}
+</script>
+</body>
+</html>

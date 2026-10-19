@@ -7,6 +7,7 @@ import { Recognizer } from '../recognizers/recognizer';
 import { WebSpeech } from '../recognizers/WebSpeech';
 import { Whisper } from '../recognizers/Whisper';
 import { GroqSTT } from '../recognizers/GroqSTT';
+import { ChromeBridge } from '../recognizers/ChromeBridge';
 import translateGT from '../translators/google_translate';
 import translateGemini from '../translators/gemini_translate';
 import translateGroq from '../translators/groq_translate';
@@ -89,7 +90,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const [currentRms, setCurrentRms] = useState(0);
+  const [_currentRms, setCurrentRms] = useState(0);
 
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
@@ -205,9 +206,13 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     // Check if we need to switch recognizer types
     const currentIsWhisper = globalSpeechRecognizer instanceof Whisper;
     const currentIsGroqSTT = globalSpeechRecognizer instanceof GroqSTT;
+    const currentIsChromeBridge = globalSpeechRecognizer instanceof ChromeBridge;
     const shouldBeWhisper = config.recognizer === 'whisper';
     const shouldBeGroqSTT = config.recognizer === 'groqstt';
-    const needsSwitch = (currentIsWhisper !== shouldBeWhisper) || (currentIsGroqSTT !== shouldBeGroqSTT);
+    const shouldBeChromeBridge = config.recognizer === 'chromebridge';
+    const needsSwitch = (currentIsWhisper !== shouldBeWhisper) ||
+                        (currentIsGroqSTT !== shouldBeGroqSTT) ||
+                        (currentIsChromeBridge !== shouldBeChromeBridge);
 
     if (needsSwitch) {
       info(`[SR] Recognizer type change detected: switching to ${config.recognizer}`);
@@ -223,8 +228,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         newRecognizer = new Whisper(config.source_language, config.whisper_model, config.vad_threshold, config.selected_microphone);
         info(`[SR] Switched to Whisper recognizer with model: ${config.whisper_model}`);
       } else if (shouldBeGroqSTT) {
-        newRecognizer = new GroqSTT(config.source_language, config.groq_api_key, config.vad_threshold, config.selected_microphone);
+        newRecognizer = new GroqSTT(config.source_language, config.groq_api_key, config.vad_threshold, config.selected_microphone, config.groq_stt_model, config.groq_stt_prompt);
         info(`[SR] Switched to Groq STT recognizer`);
+      } else if (shouldBeChromeBridge) {
+        newRecognizer = new ChromeBridge(config.source_language);
+        info(`[SR] Switched to Chrome Bridge recognizer`);
       } else {
         newRecognizer = new WebSpeech(config.source_language, config.selected_microphone);
         info(`[SR] Switched to WebSpeech recognizer`);
@@ -318,8 +326,10 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         info(`[SR] Groq STT VAD threshold change: ${config.vad_threshold}`);
         groqRecognizer.setVadThreshold(config.vad_threshold);
       }
+      groqRecognizer.setPrompt(config.groq_stt_prompt || '');
+      groqRecognizer.setModel(config.groq_stt_model || 'whisper-large-v3');
     }
-  }, [config.recognizer, config.whisper_model, config.vad_threshold, config.groq_api_key]);
+  }, [config.recognizer, config.whisper_model, config.vad_threshold, config.groq_api_key, config.groq_stt_model, config.groq_stt_prompt]);
 
   // Handle recognition status based on VRC mute status
   useEffect(() => {
@@ -365,10 +375,13 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
   // Translation processing loop
   useEffect(() => {
     const processTranslation = async () => {
-      // If we are offline, wait until connection is restored to avoid useless fetches
+      // If we are offline, discard the queue to avoid translating stale speech
+      // once the connection is restored.
       if (!navigator.onLine) {
-        info("[TRANSLATION] Skipping translation because network is offline");
-        // Don't lock the queue when offline - just skip processing
+        if (detectionQueue.length > 0) {
+          warn(`[TRANSLATION] Network offline — discarding ${detectionQueue.length} queued item(s) to prevent stale translations`);
+          detectionQueue = [];
+        }
         return;
       }
       if (detectionQueue.length === 0 || lock) return;
@@ -858,8 +871,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
       recognizer = new Whisper(config.source_language, config.whisper_model, config.vad_threshold, config.selected_microphone);
       info(`[SR] Initializing Whisper recognizer with model: ${config.whisper_model}`);
     } else if (config.recognizer === 'groqstt') {
-      recognizer = new GroqSTT(config.source_language, config.groq_api_key, config.vad_threshold, config.selected_microphone);
+      recognizer = new GroqSTT(config.source_language, config.groq_api_key, config.vad_threshold, config.selected_microphone, config.groq_stt_model, config.groq_stt_prompt);
       info(`[SR] Initializing Groq STT recognizer`);
+    } else if (config.recognizer === 'chromebridge') {
+      recognizer = new ChromeBridge(config.source_language);
+      info(`[SR] Initializing Chrome Bridge recognizer`);
     } else {
       recognizer = new WebSpeech(config.source_language, config.selected_microphone);
       info(`[SR] Initializing WebSpeech recognizer`);
@@ -1168,6 +1184,14 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     // Handler for regaining internet connection
     const handleOnline = () => {
       info('[NETWORK] Connection restored (online event)');
+
+      // Always clear the queue on reconnection so stale speech from the
+      // offline period is never translated late.
+      if (detectionQueue.length > 0) {
+        warn(`[NETWORK] Discarding ${detectionQueue.length} stale queued item(s) after reconnection`);
+        detectionQueue = [];
+      }
+
       if (globalSpeechRecognizer && recognitionActiveRef.current) {
         // Restart the recognizer only if it is not currently running
         if (!globalSpeechRecognizer.status()) {
@@ -1185,14 +1209,20 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     // Handler for losing internet connection
     const handleOffline = () => {
       info('[NETWORK] Connection lost (offline event)');
+
+      // Always clear the queue regardless of recognizer status — speech may
+      // have been queued right before the network dropped.
+      if (detectionQueue.length > 0) {
+        warn(`[NETWORK] Discarding ${detectionQueue.length} queued item(s) due to connection loss`);
+      }
+      detectionQueue = [];
+      setSourceText('');
+      setTranslatedText('');
+
       if (globalSpeechRecognizer && globalSpeechRecognizer.status()) {
         try {
           info('[NETWORK] Stopping speech recognition due to connection loss');
           globalSpeechRecognizer.stop();
-          // Clear any queued transcripts to prevent a backlog once we come back online
-          detectionQueue = [];
-          setSourceText('');
-          setTranslatedText('');
         } catch (e) {
           error(`[NETWORK] Error stopping recognizer on connection loss: ${e}`);
         }

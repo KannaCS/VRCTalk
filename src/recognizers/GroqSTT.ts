@@ -13,8 +13,10 @@ import { info, error, warn, debug } from '@tauri-apps/plugin-log';
 import { groqKeyManager } from '../utils/groq_key_manager';
 
 const GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
-const GROQ_MODEL = "whisper-large-v3-turbo";
-const SAMPLE_RATE = 16000;
+const GROQ_MODEL_ACCURATE = "whisper-large-v3";       // 10.3% WER, best accuracy
+// const GROQ_MODEL_FAST = "whisper-large-v3-turbo";  // 12% WER, faster & cheaper
+const SAMPLE_RATE = 16000;           // Target rate for Whisper
+const NATIVE_SAMPLE_RATE = 48000;    // Most mics/browsers native rate
 const SCRIPT_PROCESSOR_BUFFER = 4096;
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -25,7 +27,7 @@ const MIN_UTTERANCE_MS = 300;    // drop utterances shorter than this
 
 // Streaming: while speaking, send a chunk every N ms so the user sees
 // results quickly without waiting for end-of-sentence silence.
-const STREAM_CHUNK_MS = 4000;
+const STREAM_CHUNK_MS = 3000;
 
 // Default VAD threshold — set above your background noise floor.
 // Typical values: quiet room 0.005, noisy room 0.010–0.015.
@@ -36,6 +38,8 @@ export class GroqSTT extends Recognizer {
     private userApiKey: string;
     public vadThreshold: number;
     private selectedMicrophoneId: string | null;
+    private model: string;
+    private prompt: string;
 
     private audioStream: MediaStream | null = null;
     private audioContext: AudioContext | null = null;
@@ -56,18 +60,24 @@ export class GroqSTT extends Recognizer {
     private vadTimerId: ReturnType<typeof setInterval> | null = null;
     private resultCallback: ((result: string, final: boolean) => void) | null = null;
     private activeController: AbortController | null = null;
+    private nativeSampleRate: number = NATIVE_SAMPLE_RATE;
 
     constructor(
         lang: string,
         userApiKey: string = '',
         vadThreshold: number = DEFAULT_VAD_THRESHOLD,
-        microphoneId: string | null = null
+        microphoneId: string | null = null,
+        model: string = GROQ_MODEL_ACCURATE,
+        prompt: string = ''
     ) {
         super(lang);
         this.userApiKey = userApiKey;
         this.vadThreshold = vadThreshold;
         this.selectedMicrophoneId = microphoneId;
-        info(`[GROQSTT] Initialized — lang: ${lang}, vad: ${vadThreshold}`);
+        this.model = ['whisper-large-v3', 'whisper-large-v3-turbo'].includes(model)
+            ? model : GROQ_MODEL_ACCURATE;
+        this.prompt = prompt;
+        info(`[GROQSTT] Initialized — lang: ${lang}, model: ${this.model}, vad: ${vadThreshold}`);
     }
 
     async start(): Promise<void> {
@@ -87,19 +97,31 @@ export class GroqSTT extends Recognizer {
                 return;
             }
 
+            // Capture at native browser rate — don't force 16kHz on getUserMedia
+            // as many WebView2/browsers ignore it or resample poorly.
+            // We do our own high-quality downsample to 16kHz before sending to Groq.
             const constraints: MediaStreamConstraints = {
                 audio: {
                     deviceId: this.selectedMicrophoneId ? { exact: this.selectedMicrophoneId } : undefined,
                     channelCount: 1,
-                    sampleRate: SAMPLE_RATE,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
+                    // Let the browser use its native sample rate
+                    // echoCancellation/noiseSuppression OFF — Whisper is trained on
+                    // natural speech; heavy DSP processing can hurt accuracy
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
                 }
             };
 
             this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+
+            // Use native rate for AudioContext so no implicit resampling occurs
+            const nativeRate = this.audioStream.getAudioTracks()[0]
+                .getSettings().sampleRate || NATIVE_SAMPLE_RATE;
+            info(`[GROQSTT] Native sample rate: ${nativeRate}Hz`);
+            this.nativeSampleRate = nativeRate;
+
+            this.audioContext = new AudioContext({ sampleRate: nativeRate });
             this.sourceNode = this.audioContext.createMediaStreamSource(this.audioStream);
             this.scriptProcessor = this.audioContext.createScriptProcessor(SCRIPT_PROCESSOR_BUFFER, 1, 1);
 
@@ -168,6 +190,19 @@ export class GroqSTT extends Recognizer {
 
     setApiKey(key: string): void { this.userApiKey = key; }
 
+    setModel(model: string): void {
+        if (['whisper-large-v3', 'whisper-large-v3-turbo'].includes(model)) {
+            this.model = model;
+            info(`[GROQSTT] Model → ${model}`);
+            if (this.running) this.restart();
+        }
+    }
+
+    setPrompt(prompt: string): void {
+        this.prompt = prompt;
+        info(`[GROQSTT] Prompt updated`);
+    }
+
     setVadThreshold(threshold: number): void {
         this.vadThreshold = threshold;
         info(`[GROQSTT] VAD threshold → ${threshold}`);
@@ -192,7 +227,7 @@ export class GroqSTT extends Recognizer {
         const newFrames = this.allFrames.splice(0);
         if (newFrames.length === 0) return;
 
-        const msPerFrame = (SCRIPT_PROCESSOR_BUFFER / SAMPLE_RATE) * 1000;
+        const msPerFrame = (SCRIPT_PROCESSOR_BUFFER / this.nativeSampleRate) * 1000;
 
         for (const frame of newFrames) {
             const rms = this.frameRms(frame);
@@ -221,13 +256,15 @@ export class GroqSTT extends Recognizer {
                 const timeSinceLastSend = Date.now() - this.lastStreamSentTime;
 
                 // Stream chunk: send every STREAM_CHUNK_MS while speaking
-                // so the user sees quick results on long sentences
+                // so the user sees quick results on long sentences.
+                // Clear speechFrames after each send so the next chunk is
+                // a fresh window — avoids Whisper hallucinating on stale audio.
                 if (timeSinceLastSend >= STREAM_CHUNK_MS && this.speechFrames.length > 0) {
                     info(`[GROQSTT] Streaming chunk after ${utteranceDuration}ms`);
                     const framesToSend = [...this.speechFrames];
-                    this.speechFrames = [];
+                    this.speechFrames = [];   // fresh window for next chunk
                     this.lastStreamSentTime = Date.now();
-                    this.processUtterance(framesToSend, false);
+                    this.processUtterance(framesToSend);
                 }
                 // End of utterance: trailing silence detected
                 else if (silenceDuration >= SILENCE_END_MS) {
@@ -245,7 +282,7 @@ export class GroqSTT extends Recognizer {
                     const silentFrameCount = Math.ceil(SILENCE_END_MS / msPerFrame);
                     const framesToSend = this.speechFrames.slice(0, Math.max(1, this.speechFrames.length - silentFrameCount));
                     this.speechFrames = [];
-                    this.processUtterance(framesToSend, true);
+                    this.processUtterance(framesToSend);
                 }
             }
         }
@@ -253,7 +290,7 @@ export class GroqSTT extends Recognizer {
 
     // ── Utterance processing ──────────────────────────────────────────────────
 
-    private async processUtterance(frames: Float32Array[], isFinalChunk: boolean): Promise<void> {
+    private async processUtterance(frames: Float32Array[]): Promise<void> {
         const totalLen = frames.reduce((n, f) => n + f.length, 0);
         if (totalLen === 0) return;
 
@@ -268,9 +305,14 @@ export class GroqSTT extends Recognizer {
             return;
         }
 
-        const pcm = new Int16Array(totalLen);
-        for (let i = 0; i < totalLen; i++) {
-            const s = Math.max(-1, Math.min(1, combined[i]));
+        // Downsample from native rate to 16kHz for Whisper
+        const downsampled = this.nativeSampleRate !== SAMPLE_RATE
+            ? this.downsample(combined, this.nativeSampleRate, SAMPLE_RATE)
+            : combined;
+
+        const pcm = new Int16Array(downsampled.length);
+        for (let i = 0; i < downsampled.length; i++) {
+            const s = Math.max(-1, Math.min(1, downsampled[i]));
             pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
 
@@ -286,11 +328,34 @@ export class GroqSTT extends Recognizer {
         }
 
         info(`[GROQSTT] Transcription: "${text}"`);
-        // Stream chunks are interim (false), final silence-triggered chunks are final (true)
-        this.resultCallback?.(text.trim(), isFinalChunk);
+        // Both streaming and final chunks go to the callback as final=true
+        // so VRChat receives each sentence fragment translated immediately.
+        // Holding until utterance end causes too much delay during long speech.
+        this.resultCallback?.(text.trim(), true);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * High-quality linear interpolation downsample.
+     * Converts Float32 PCM from srcRate to dstRate.
+     * Much cleaner than AudioContext implicit resampling.
+     */
+    private downsample(input: Float32Array, srcRate: number, dstRate: number): Float32Array {
+        if (srcRate === dstRate) return input;
+        const ratio = srcRate / dstRate;
+        const outputLen = Math.floor(input.length / ratio);
+        const output = new Float32Array(outputLen);
+        for (let i = 0; i < outputLen; i++) {
+            const pos = i * ratio;
+            const idx = Math.floor(pos);
+            const frac = pos - idx;
+            const a = input[idx] ?? 0;
+            const b = input[idx + 1] ?? 0;
+            output[i] = a + frac * (b - a); // linear interpolation
+        }
+        return output;
+    }
 
     private frameRms(frame: Float32Array): number {
         let sum = 0;
@@ -300,17 +365,36 @@ export class GroqSTT extends Recognizer {
 
     private isHallucination(text: string): boolean {
         const t = text.trim();
+        // Pure punctuation
         if (/^[.,!?;:\-–—…]+$/.test(t)) return true;
-        const known = [
-            "thank you.", "thanks.", "thank you", "thanks",
-            "terima kasih.", "terima kasih",
-            "you", ".", "..", "...", "okay.", "ok.", "okay", "ok",
-            "hmm.", "hmm", "um.", "um", "uh.", "uh",
-            "♪", "♫", "[music]", "[applause]", "[silence]",
-            "subtitles by", "subtitle", "transcribed by",
-        ];
-        if (known.includes(t.toLowerCase())) return true;
+        // Too short with no letters
         if (t.length <= 2 && !/[a-zA-Z]/.test(t)) return true;
+
+        const lower = t.toLowerCase().replace(/[!?.]/g, '').trim();
+
+        // Exact known hallucinations
+        const known = new Set([
+            "thank you", "thanks", "you",
+            "okay", "ok", "hmm", "um", "uh",
+            "terima kasih", "makasih",
+            "♪", "♫", "[music]", "[applause]", "[silence]",
+        ]);
+        if (known.has(lower)) return true;
+
+        // Pattern-based: "thanks for watching" family in any language
+        // Whisper commonly inserts YouTube-style sign-offs on unclear audio
+        const hallucinationPatterns = [
+            /terima kasih (telah|sudah) menonton/i,
+            /thanks? (for|you) watching/i,
+            /thank you (for|so much) (watching|for)/i,
+            /subscri(be|bed)/i,
+            /like and subscri/i,
+            /jangan lupa (like|subscribe)/i,
+            /sampai jumpa/i,    // only as standalone utterance — caught by length check below
+            /see you (next time|in the next)/i,
+        ];
+        if (hallucinationPatterns.some(p => p.test(t))) return true;
+
         return false;
     }
 
@@ -324,10 +408,14 @@ export class GroqSTT extends Recognizer {
 
         const form = new FormData();
         form.append("file", wav, "audio.wav");
-        form.append("model", GROQ_MODEL);
+        form.append("model", this.model);
         form.append("language", langCode);
         form.append("response_format", "text");
         form.append("temperature", "0");
+        // Prompt helps Whisper with proper nouns, style, and context
+        if (this.prompt && this.prompt.trim()) {
+            form.append("prompt", this.prompt.trim());
+        }
 
         this.activeController = new AbortController();
         const timeoutId = setTimeout(() => this.activeController?.abort(), REQUEST_TIMEOUT_MS);

@@ -33,6 +33,8 @@ export type Config = {
     translation_style: string; // "casual", "formal", "polite", "friendly"
     gemini_api_key: string; // Gemini API key for translation
     groq_api_key: string; // Groq API key for translation
+    groq_stt_model: string; // Groq STT model: "whisper-large-v3-turbo" or "whisper-large-v3"
+    groq_stt_prompt: string; // Optional prompt to guide transcription (names, context, etc.)
     layout: string; // "default" or "horizontal"
     theme_color: string; // "blue", "purple", "green", "orange", "pink", "red"
     language_settings: {
@@ -108,6 +110,8 @@ export const DEFAULT_CONFIG: Config = {
     translation_style: "casual", // Default translation style
     gemini_api_key: "", // Empty by default
     groq_api_key: "", // Empty by default
+    groq_stt_model: "whisper-large-v3", // Default to highest accuracy model
+    groq_stt_prompt: "", // Empty by default — add context words to improve accuracy
     layout: "default", // Default layout
     theme_color: "blue", // Default theme color
     language_settings: {
@@ -207,8 +211,9 @@ export function validateConfig(config: Config): Config {
     validated.selected_microphone = null;
     
     // Recognizer settings
-    if (config.recognizer && ['webspeech', 'whisper', 'groqstt'].includes(config.recognizer)) {
-        validated.recognizer = config.recognizer;
+    if (config.recognizer && ['webspeech', 'whisper', 'groqstt', 'chromebridge'].includes(config.recognizer)) {
+        // WebSpeech is broken in Tauri/WebView2 — migrate existing users to Groq STT
+        validated.recognizer = config.recognizer === 'webspeech' ? 'groqstt' : config.recognizer;
     }
     if (config.whisper_model) validated.whisper_model = config.whisper_model;
     if (typeof config.vad_threshold === 'number') {
@@ -229,6 +234,12 @@ export function validateConfig(config: Config): Config {
     }
     if (typeof config.groq_api_key === 'string') {
         validated.groq_api_key = config.groq_api_key;
+    }
+    if (config.groq_stt_model && ['whisper-large-v3', 'whisper-large-v3-turbo'].includes(config.groq_stt_model)) {
+        validated.groq_stt_model = config.groq_stt_model;
+    }
+    if (typeof config.groq_stt_prompt === 'string') {
+        validated.groq_stt_prompt = config.groq_stt_prompt;
     }
     
     // Appearance settings

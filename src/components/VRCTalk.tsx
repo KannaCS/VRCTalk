@@ -1525,6 +1525,22 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
             )}
           </div>
         )}
+
+        {/* Microphone Settings Button */}
+        <button
+          onClick={() => {
+            invoke('open_sound_settings').catch(err =>
+              error(`Failed to open sound settings: ${err}`)
+            );
+          }}
+          className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-accent-400/20 text-white/80 hover:text-white hover:bg-dark-700/50 transition-all text-sm"
+          title="Open Windows Sound Settings"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+          <span>Microphone</span>
+        </button>
       </div>
 
       {/* Live Session Badge */}

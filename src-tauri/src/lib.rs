@@ -256,6 +256,25 @@ fn start_vrc_listener(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens the Windows Sound settings so the user can pick their microphone.
+#[tauri::command]
+fn open_sound_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Open the classic Sound control panel on the Recording tab
+        // so the user can set their default microphone.
+        std::process::Command::new("rundll32.exe")
+            .args(["shell32.dll,Control_RunDLL", "mmsys.cpl,,1"])
+            .spawn()
+            .map_err(|e| format!("Failed to open Sound settings: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        return Err("Sound settings are only supported on Windows".into());
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -276,7 +295,8 @@ pub fn run() {
             whisper_download_model,
             whisper_is_model_downloaded,
             whisper_get_downloaded_models,
-            whisper_transcribe
+            whisper_transcribe,
+            open_sound_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

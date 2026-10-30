@@ -207,8 +207,10 @@ export function validateConfig(config: Config): Config {
         validated.secondary_target_language = config.secondary_target_language;
     }
     if (typeof config.mode === 'number') validated.mode = config.mode;
-    // Microphone selection is no longer user-configurable – always use system default
-    validated.selected_microphone = null;
+    // Preserve user's microphone selection (null = use OS default)
+    if (config.selected_microphone !== undefined) {
+        validated.selected_microphone = config.selected_microphone;
+    }
     
     // Recognizer settings
     if (config.recognizer && ['webspeech', 'whisper', 'groqstt', 'chromebridge'].includes(config.recognizer)) {

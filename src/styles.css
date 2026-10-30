@@ -31,6 +31,15 @@ body {
   --surface-primary: rgba(23, 23, 23, 0.95);
   --surface-secondary: rgba(38, 38, 38, 0.9);
   --border-subtle: rgba(252, 211, 77, 0.15);
+  /* Dashboard-specific variables */
+  --dashboard-bg: #0b1120;
+  --dashboard-surface: #111a2e;
+  --dashboard-card: #131d33;
+  --dashboard-card-hover: #162240;
+  --dashboard-border: rgba(56, 189, 248, 0.15);
+  --dashboard-border-active: rgba(56, 189, 248, 0.45);
+  --dashboard-sidebar: #0d1526;
+  --dashboard-topbar: rgba(11, 17, 32, 0.85);
 }
 
 /* Theme Color Variants */
@@ -41,6 +50,8 @@ body {
   --glass-border: rgba(96, 165, 250, 0.2);
   --shadow-glow: 0 0 20px rgba(96, 165, 250, 0.4);
   --border-subtle: rgba(96, 165, 250, 0.15);
+  --dashboard-border: rgba(96, 165, 250, 0.18);
+  --dashboard-border-active: rgba(96, 165, 250, 0.5);
 }
 
 .theme-blue .btn-modern {
@@ -70,6 +81,8 @@ body {
   --glass-border: rgba(167, 139, 250, 0.2);
   --shadow-glow: 0 0 20px rgba(167, 139, 250, 0.4);
   --border-subtle: rgba(167, 139, 250, 0.15);
+  --dashboard-border: rgba(167, 139, 250, 0.18);
+  --dashboard-border-active: rgba(167, 139, 250, 0.5);
 }
 
 .theme-purple .btn-modern {
@@ -99,6 +112,8 @@ body {
   --glass-border: rgba(74, 222, 128, 0.2);
   --shadow-glow: 0 0 20px rgba(74, 222, 128, 0.4);
   --border-subtle: rgba(74, 222, 128, 0.15);
+  --dashboard-border: rgba(74, 222, 128, 0.18);
+  --dashboard-border-active: rgba(74, 222, 128, 0.5);
 }
 
 .theme-green .btn-modern {
@@ -128,6 +143,8 @@ body {
   --glass-border: rgba(251, 146, 60, 0.2);
   --shadow-glow: 0 0 20px rgba(251, 146, 60, 0.4);
   --border-subtle: rgba(251, 146, 60, 0.15);
+  --dashboard-border: rgba(251, 146, 60, 0.18);
+  --dashboard-border-active: rgba(251, 146, 60, 0.5);
 }
 
 .theme-orange .btn-modern {
@@ -157,6 +174,8 @@ body {
   --glass-border: rgba(244, 114, 182, 0.2);
   --shadow-glow: 0 0 20px rgba(244, 114, 182, 0.4);
   --border-subtle: rgba(244, 114, 182, 0.15);
+  --dashboard-border: rgba(244, 114, 182, 0.18);
+  --dashboard-border-active: rgba(244, 114, 182, 0.5);
 }
 
 .theme-pink .btn-modern {
@@ -186,6 +205,8 @@ body {
   --glass-border: rgba(248, 113, 113, 0.2);
   --shadow-glow: 0 0 20px rgba(248, 113, 113, 0.4);
   --border-subtle: rgba(248, 113, 113, 0.15);
+  --dashboard-border: rgba(248, 113, 113, 0.18);
+  --dashboard-border-active: rgba(248, 113, 113, 0.5);
 }
 
 .theme-red .btn-modern {
@@ -501,12 +522,11 @@ body {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(30, 41, 59, 0.5);
-  border-radius: 10px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -901,8 +921,8 @@ body {
 }
 
 .card-active {
-  border-color: rgba(252, 211, 77, 0.6) !important;
-  box-shadow: 0 0 20px rgba(252, 211, 77, 0.15);
+  border-color: var(--dashboard-border-active) !important;
+  box-shadow: 0 0 25px rgba(56, 189, 248, 0.08), inset 0 0 20px rgba(56, 189, 248, 0.03);
 }
 
 /* Loading States */
@@ -990,13 +1010,127 @@ body {
   box-shadow: var(--shadow-intense);
 }
 
-/* Header Enhancements */
+/* ============================================
+   Dashboard Layout - Main App Container
+   ============================================ */
+
+/* Header - Dashboard Top Bar */
 .app-header {
   @apply relative;
-  background: var(--surface-secondary);
+  background: var(--dashboard-topbar);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--dashboard-border);
+}
+
+/* ============================================
+   Dashboard Sidebar
+   ============================================ */
+
+.dashboard-sidebar {
+  @apply flex flex-col items-center py-5 gap-6;
+  width: 56px;
+  min-height: 100%;
+  background: var(--dashboard-sidebar);
+  border-right: 1px solid var(--dashboard-border);
+  position: relative;
+  z-index: 20;
+}
+
+.dashboard-sidebar .sidebar-logo {
+  @apply flex items-center justify-center mb-2;
+}
+
+.dashboard-sidebar .sidebar-logo img {
+  @apply w-8 h-8 object-contain;
+}
+
+.dashboard-sidebar .sidebar-nav {
+  @apply flex flex-col items-center gap-1 flex-1;
+}
+
+.dashboard-sidebar .sidebar-nav-item {
+  @apply flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 cursor-pointer relative;
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.dashboard-sidebar .sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.dashboard-sidebar .sidebar-nav-item.active {
+  background: var(--primary-color);
+  color: var(--dashboard-bg);
+  box-shadow: 0 2px 10px rgba(var(--primary-color), 0.3);
+}
+
+.dashboard-sidebar .sidebar-nav-item svg {
+  @apply w-5 h-5;
+}
+
+.dashboard-sidebar .sidebar-footer {
+  @apply flex flex-col items-center gap-2;
+}
+
+/* ============================================
+   Dashboard Content Area
+   ============================================ */
+
+.dashboard-layout {
+  @apply flex min-h-screen;
+  background: var(--dashboard-bg);
+}
+
+.dashboard-main {
+  @apply flex-1 flex flex-col;
+  min-width: 0;
+}
+
+.dashboard-topbar {
+  @apply flex items-center justify-between px-6 py-3;
+  background: var(--dashboard-topbar);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--dashboard-border);
+}
+
+.dashboard-topbar-left {
+  @apply flex items-center gap-4;
+}
+
+.dashboard-topbar-center {
+  @apply flex items-center gap-3 flex-wrap justify-center flex-1 px-4;
+}
+
+.dashboard-topbar-right {
+  @apply flex items-center gap-3;
+}
+
+.dashboard-body {
+  @apply flex flex-1 overflow-hidden;
+}
+
+.dashboard-content {
+  @apply flex-1 p-5 overflow-y-auto;
+}
+
+.dashboard-right-panel {
+  @apply flex flex-col gap-5 p-5;
+  width: 280px;
+  min-width: 280px;
+  border-left: 1px solid var(--dashboard-border);
+  background: rgba(13, 21, 38, 0.5);
+  overflow-y: auto;
+}
+
+/* ============================================
+   Dashboard Cards
+   ============================================ */
+
+.dashboard-section-title {
+  @apply text-xs font-bold uppercase tracking-widest mb-4;
+  color: rgba(148, 163, 184, 0.7);
+  letter-spacing: 0.15em;
 }
 
 /* Progress Bars */
@@ -1042,6 +1176,18 @@ body {
 
   .text-display-modern {
     @apply p-2 min-h-[50px];
+  }
+
+  .dashboard-right-panel {
+    display: none;
+  }
+
+  .dashboard-sidebar {
+    width: 46px;
+  }
+
+  .dashboard-content {
+    @apply p-3;
   }
 }
 
@@ -1120,18 +1266,24 @@ body {
   }
 }
 
-/* Transcript Card - LinguaFlow style */
+/* Transcript Card - Dashboard style */
 .transcript-card {
-  @apply relative rounded-2xl p-5 h-full;
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid rgba(71, 85, 105, 0.4);
+  @apply relative rounded-2xl p-5;
+  background: var(--dashboard-card);
+  border: 1px solid var(--dashboard-border);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  transition: all 0.3s ease;
+}
+
+.transcript-card:hover {
+  border-color: var(--dashboard-border-active);
+  background: var(--dashboard-card-hover);
 }
 
 .transcript-card-header {
   @apply flex items-center justify-between mb-4 pb-3;
-  border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.08);
 }
 
 .transcript-card-label {
@@ -1141,7 +1293,7 @@ body {
 
 .transcript-card-content {
   @apply text-2xl lg:text-3xl font-medium leading-relaxed text-white;
-  min-height: 120px;
+  min-height: 100px;
 }
 
 .transcript-card-content .highlight {
@@ -1216,11 +1368,11 @@ body {
   }
 }
 
-/* Language Selector Pill */
+/* Language Selector Pill - Dashboard style */
 .language-selector-pill {
-  @apply inline-flex items-center gap-1 px-3 py-2 rounded-full;
-  background: rgba(30, 41, 59, 0.9);
-  border: 1px solid rgba(71, 85, 105, 0.5);
+  @apply inline-flex items-center gap-1 px-3 py-2 rounded-xl;
+  background: var(--dashboard-card);
+  border: 1px solid var(--dashboard-border);
 }
 
 .language-selector-pill select {
@@ -1239,8 +1391,8 @@ body {
 }
 
 .language-selector-pill .swap-btn {
-  @apply p-1.5 rounded-full transition-all duration-300 mx-1;
-  background: rgba(71, 85, 105, 0.5);
+  @apply p-1.5 rounded-lg transition-all duration-300 mx-1;
+  background: rgba(56, 189, 248, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1249,11 +1401,12 @@ body {
 .language-selector-pill .swap-btn:hover {
   background: var(--primary-color);
   transform: rotate(180deg);
+  color: var(--dashboard-bg);
 }
 
-/* Control Bar */
+/* Control Bar - Dashboard style */
 .control-bar {
-  @apply flex flex-col items-center gap-4 py-6;
+  @apply flex flex-col items-center gap-4 py-4;
 }
 
 .control-bar-buttons {
@@ -1261,19 +1414,20 @@ body {
 }
 
 .control-btn {
-  @apply p-3 rounded-full transition-all duration-300;
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(71, 85, 105, 0.5);
-  color: white;
+  @apply p-3 rounded-xl transition-all duration-300;
+  background: var(--dashboard-card);
+  border: 1px solid var(--dashboard-border);
+  color: rgba(148, 163, 184, 0.8);
 }
 
 .control-btn:hover {
-  background: rgba(51, 65, 85, 0.9);
-  border-color: rgba(100, 116, 139, 0.6);
+  background: var(--dashboard-card-hover);
+  border-color: var(--dashboard-border-active);
+  color: white;
 }
 
 .control-btn-primary {
-  @apply px-6 py-3 rounded-full font-medium text-sm flex items-center gap-2;
+  @apply px-6 py-3 rounded-xl font-medium text-sm flex items-center gap-2;
   background: #ef4444;
   border: none;
   color: white;
@@ -1308,7 +1462,7 @@ body {
 }
 
 .copy-btn:hover {
-  background: rgba(71, 85, 105, 0.3);
+  background: rgba(56, 189, 248, 0.1);
   color: white;
 }
 
@@ -1327,13 +1481,67 @@ body {
 }
 
 .icon-btn:hover {
-  background: rgba(71, 85, 105, 0.3);
+  background: rgba(56, 189, 248, 0.1);
   color: white;
 }
 
 /* Header Centered Layout */
 .header-center {
   @apply flex items-center justify-center;
+}
+
+/* ============================================
+   Dashboard Right Panel Widgets
+   ============================================ */
+
+.right-panel-widget {
+  @apply rounded-xl p-4;
+  background: var(--dashboard-card);
+  border: 1px solid var(--dashboard-border);
+}
+
+.right-panel-widget-title {
+  @apply text-xs font-bold uppercase tracking-widest mb-3;
+  color: rgba(148, 163, 184, 0.7);
+  letter-spacing: 0.12em;
+}
+
+.right-panel-widget-value {
+  @apply text-2xl font-bold text-white;
+}
+
+.right-panel-widget-sub {
+  @apply text-xs mt-1;
+  color: var(--primary-color);
+}
+
+/* Mic status card in right panel */
+.mic-status-card {
+  @apply rounded-xl p-4 flex items-center gap-3;
+  background: var(--dashboard-card);
+  border: 1px solid var(--dashboard-border);
+  transition: all 0.3s ease;
+}
+
+.mic-status-card:hover {
+  border-color: var(--dashboard-border-active);
+}
+
+.mic-status-indicator {
+  @apply w-3 h-3 rounded-full flex-shrink-0;
+  background: var(--success-color);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.mic-status-indicator.inactive {
+  background: rgba(148, 163, 184, 0.3);
+  box-shadow: none;
+  animation: none;
+}
+
+.mic-status-text {
+  @apply text-sm text-white/80 truncate;
 }
 
 /* ============================================

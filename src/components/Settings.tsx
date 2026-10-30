@@ -22,6 +22,11 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
   const [activeSection, setActiveSection] = useState<SettingsSection>('language');
 
+  // Microphone enumeration
+  const [availableMicrophones, setAvailableMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [microphoneDropdownOpen, setMicrophoneDropdownOpen] = useState(false);
+  const microphoneDropdownRef = useRef<HTMLDivElement>(null);
+
   // Dropdown states
   const [sourceLanguageDropdownOpen, setSourceLanguageDropdownOpen] = useState(false);
   const [targetLanguageDropdownOpen, setTargetLanguageDropdownOpen] = useState(false);
@@ -73,6 +78,9 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
       if (speedDropdownRef.current && !speedDropdownRef.current.contains(event.target as Node)) {
         setSpeedDropdownOpen(false);
       }
+      if (microphoneDropdownRef.current && !microphoneDropdownRef.current.contains(event.target as Node)) {
+        setMicrophoneDropdownOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -85,6 +93,36 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
   useEffect(() => {
     setLocalConfig({ ...config });
   }, [config]);
+
+  // Enumerate available microphones whenever the Speech section is opened,
+  // and keep the list fresh if devices change while the panel is open.
+  useEffect(() => {
+    if (activeSection !== 'speech') return;
+
+    const enumerate = async () => {
+      try {
+        // Request permission first so labels are populated (browsers hide
+        // labels until permission is granted).
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+      } catch (_) {
+        // Non-blocking — we'll show device IDs if labels aren't available
+      }
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        setAvailableMicrophones(devices.filter(d => d.kind === 'audioinput'));
+      } catch (e) {
+        error(`[SETTINGS] Error enumerating microphones: ${e}`);
+      }
+    };
+
+    enumerate();
+
+    navigator.mediaDevices.addEventListener?.('devicechange', enumerate);
+    return () => {
+      navigator.mediaDevices.removeEventListener?.('devicechange', enumerate);
+    };
+  }, [activeSection]);
 
   // Check for unsaved changes
   useEffect(() => {
@@ -704,28 +742,82 @@ const Settings: React.FC<SettingsProps> = ({ config, setConfig, onClose }) => {
 
               {/* VAD Sensitivity — shown for Groq STT and Whisper */}
               {(localConfig.recognizer === 'groqstt' || localConfig.recognizer === 'whisper') && (
-                <div className="settings-row flex-col items-start gap-2">
-                  <div className="settings-row-info w-full">
-                    <div className="settings-row-title">Mic Sensitivity (VAD Threshold)</div>
-                    <div className="settings-row-description">
-                      Lower = more sensitive (picks up quiet speech). Raise if background noise triggers false detection.
-                      Current: <span className="text-white/90 font-medium">{localConfig.vad_threshold.toFixed(3)}</span>
+                <>
+                  {/* Microphone selector */}
+                  <div className="settings-row">
+                    <div className="settings-row-info">
+                      <div className="settings-row-title">Microphone</div>
+                      <div className="settings-row-description">Which mic to use for speech recognition</div>
+                    </div>
+                    <div className="relative" ref={microphoneDropdownRef} style={{ width: '220px' }}>
+                      <button
+                        onClick={() => setMicrophoneDropdownOpen(!microphoneDropdownOpen)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 bg-white/5 border border-white/10 text-white hover:border-white/20"
+                      >
+                        <span className="truncate">
+                          {localConfig.selected_microphone
+                            ? (availableMicrophones.find(m => m.deviceId === localConfig.selected_microphone)?.label?.replace(/\s*\([^)]+\)\s*$/, '') || 'Selected mic')
+                            : 'System Default'}
+                        </span>
+                        <svg className={`w-4 h-4 flex-shrink-0 ml-2 transition-transform ${microphoneDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {microphoneDropdownOpen && (
+                        <div className="absolute top-full right-0 mt-2 w-full max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                          {/* "System Default" option */}
+                          <button
+                            onClick={() => {
+                              updateLocalConfig({ selected_microphone: null });
+                              setMicrophoneDropdownOpen(false);
+                            }}
+                            className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl ${localConfig.selected_microphone === null ? 'bg-accent-400/20 text-white font-medium' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                          >
+                            System Default
+                          </button>
+                          {availableMicrophones.map((mic) => (
+                            <button
+                              key={mic.deviceId}
+                              onClick={() => {
+                                updateLocalConfig({ selected_microphone: mic.deviceId });
+                                setMicrophoneDropdownOpen(false);
+                              }}
+                              className={`w-full px-4 py-2.5 text-left text-sm transition-all last:rounded-b-xl ${localConfig.selected_microphone === mic.deviceId ? 'bg-accent-400/20 text-white font-medium' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                            >
+                              <span className="block truncate">{mic.label?.replace(/\s*\([^)]+\)\s*$/, '') || `Microphone ${mic.deviceId.substring(0, 8)}…`}</span>
+                            </button>
+                          ))}
+                          {availableMicrophones.length === 0 && (
+                            <div className="px-4 py-2.5 text-sm text-white/40">No microphones found</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="w-full flex items-center gap-3">
-                    <span className="text-xs text-white/40 w-8 text-right">Low</span>
-                    <input
-                      type="range"
-                      min="0.001"
-                      max="0.03"
-                      step="0.001"
-                      value={localConfig.vad_threshold}
-                      onChange={(e) => updateLocalConfig({ vad_threshold: parseFloat(e.target.value) })}
-                      className="flex-1 accent-accent-400 h-2 cursor-pointer"
-                    />
-                    <span className="text-xs text-white/40 w-8">High</span>
+
+                  <div className="settings-row flex-col items-start gap-2">
+                    <div className="settings-row-info w-full">
+                      <div className="settings-row-title">Mic Sensitivity (VAD Threshold)</div>
+                      <div className="settings-row-description">
+                        Lower = more sensitive (picks up quiet speech). Raise if background noise triggers false detection.
+                        Current: <span className="text-white/90 font-medium">{localConfig.vad_threshold.toFixed(3)}</span>
+                      </div>
+                    </div>
+                    <div className="w-full flex items-center gap-3">
+                      <span className="text-xs text-white/40 w-8 text-right">Low</span>
+                      <input
+                        type="range"
+                        min="0.001"
+                        max="0.03"
+                        step="0.001"
+                        value={localConfig.vad_threshold}
+                        onChange={(e) => updateLocalConfig({ vad_threshold: parseFloat(e.target.value) })}
+                        className="flex-1 accent-accent-400 h-2 cursor-pointer"
+                      />
+                      <span className="text-xs text-white/40 w-8">High</span>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </section>

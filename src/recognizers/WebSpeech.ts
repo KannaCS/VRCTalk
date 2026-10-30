@@ -267,8 +267,26 @@ export class WebSpeech extends Recognizer {
                     }
                 }, delay);
             } else {
-                error("[WEBSPEECH] Maximum reconnection attempts reached. Recognition stopped.");
-                this.running = false;
+                // Max quick reconnects exhausted — do a full reinitialization
+                // rather than stopping permanently.  Under high latency the
+                // recognition object itself can get into a broken state; a
+                // full reinit gives it a clean slate without requiring an app
+                // restart.
+                error("[WEBSPEECH] Maximum reconnection attempts reached. Reinitializing recognition object.");
+                this.reconnectAttempts = 0;
+                this.initRecognition();
+                setTimeout(() => {
+                    if (this.running) {
+                        try {
+                            this.recognition.start();
+                        } catch (reinitErr: unknown) {
+                            const msg = reinitErr instanceof Error ? reinitErr.message : String(reinitErr);
+                            error(`[WEBSPEECH] Reinitialized start failed: ${msg}`);
+                            // Give up only after reinitialization also fails
+                            this.running = false;
+                        }
+                    }
+                }, 1000);
             }
         } else {
             info("[WEBSPEECH] Recognition ended as expected.");

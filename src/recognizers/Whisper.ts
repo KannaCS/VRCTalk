@@ -1,11 +1,11 @@
 import { Recognizer } from "./recognizer";
-import { info, error } from '@tauri-apps/plugin-log';
+import { info, error, debug } from '@tauri-apps/plugin-log';
 import { invoke } from '@tauri-apps/api/core';
 
 export class Whisper extends Recognizer {
     public model: string;
     public vadThreshold: number;
-    private selectedMicrophoneId: string | null = null;
+    public selectedMicrophoneId: string | null = null;
     private audioStream: MediaStream | null = null;
     private audioContext: AudioContext | null = null;
     private scriptProcessor: ScriptProcessorNode | null = null;
@@ -16,6 +16,13 @@ export class Whisper extends Recognizer {
     private recordingInterval: number = 3000; // 3s chunks
     private intervalId: NodeJS.Timeout | null = null;
     private isStarting: boolean = false;
+    // Guard against concurrent processAudioData() calls.
+    // Under high latency the Rust backend can take longer than recordingInterval,
+    // causing the interval to fire a second time before the first finishes.
+    // Two simultaneous whisper_transcribe invocations both clear the audio
+    // buffer immediately and race to write results — the second often sees an
+    // empty buffer and the first's result gets overwritten.
+    private isProcessingAudio: boolean = false;
 
     constructor(lang: string, model: string, vadThreshold: number = 0.005, microphoneId: string | null = null) {
         super(lang);
@@ -79,6 +86,7 @@ export class Whisper extends Recognizer {
 
             this.running = true;
             this.isRecording = true;
+            this.isProcessingAudio = false;
 
             if (this.resultCallback) {
                 this.resultCallback("Listening...", false);
@@ -105,6 +113,7 @@ export class Whisper extends Recognizer {
         info("[WHISPER] Stopping Whisper recognition");
         this.running = false;
         this.isRecording = false;
+        this.isProcessingAudio = false;
 
         if (this.intervalId) {
             clearInterval(this.intervalId);
@@ -201,6 +210,15 @@ export class Whisper extends Recognizer {
     private async processAudioData(): Promise<void> {
         if (this.audioData.length === 0) return;
 
+        // Skip if a previous invocation is still running (high-latency guard).
+        // The audio data keeps accumulating in this.audioData while we wait;
+        // the next interval tick will pick it all up once the backend is free.
+        if (this.isProcessingAudio) {
+            debug("[WHISPER] Previous chunk still processing — skipping tick to avoid concurrent requests");
+            return;
+        }
+        this.isProcessingAudio = true;
+
         // Extract current data and clear for next chunk seamlessly
         const currentData = this.audioData;
         this.audioData = [];
@@ -258,6 +276,8 @@ export class Whisper extends Recognizer {
             if (this.resultCallback) {
                 this.resultCallback("Listening...", false);
             }
+        } finally {
+            this.isProcessingAudio = false;
         }
     }
 

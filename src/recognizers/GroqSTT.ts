@@ -37,7 +37,7 @@ const DEFAULT_VAD_THRESHOLD = 0.010;
 export class GroqSTT extends Recognizer {
     private userApiKey: string;
     public vadThreshold: number;
-    private selectedMicrophoneId: string | null;
+    public selectedMicrophoneId: string | null;
     private model: string;
     private prompt: string;
 
@@ -61,6 +61,15 @@ export class GroqSTT extends Recognizer {
     private resultCallback: ((result: string, final: boolean) => void) | null = null;
     private activeController: AbortController | null = null;
     private nativeSampleRate: number = NATIVE_SAMPLE_RATE;
+
+    // Prevents concurrent processUtterance() calls from racing.
+    // Under high latency the API call can take >STREAM_CHUNK_MS, so without
+    // this guard a second chunk fires before the first one finishes, the two
+    // calls share (and clobber) activeController, and the stream goes silent.
+    private isProcessing: boolean = false;
+    // Frames that arrived while a request was in-flight; replayed immediately
+    // after the current request completes so no audio is dropped.
+    private pendingFrames: Float32Array[] | null = null;
 
     constructor(
         lang: string,
@@ -129,6 +138,8 @@ export class GroqSTT extends Recognizer {
             this.speechFrames = [];
             this.isSpeaking = false;
             this.silenceFrames = 0;
+            this.isProcessing = false;
+            this.pendingFrames = null;
 
             this.scriptProcessor.onaudioprocess = (e) => {
                 if (!this.running) return;
@@ -166,6 +177,8 @@ export class GroqSTT extends Recognizer {
         this.allFrames = [];
         this.speechFrames = [];
         this.isSpeaking = false;
+        this.isProcessing = false;
+        this.pendingFrames = null;
         info("[GROQSTT] Recognition stopped");
     }
 
@@ -291,6 +304,38 @@ export class GroqSTT extends Recognizer {
     // ── Utterance processing ──────────────────────────────────────────────────
 
     private async processUtterance(frames: Float32Array[]): Promise<void> {
+        // Serialise API calls: if a request is already in-flight, hold the
+        // new frames so they are processed immediately after the current one
+        // finishes.  This prevents concurrent requests from clobbering the
+        // shared activeController and silently dropping transcriptions under
+        // high latency (i.e. when the API round-trip takes > STREAM_CHUNK_MS).
+        if (this.isProcessing) {
+            // Keep only the latest pending chunk — no point queuing up many
+            // stale chunks if the user is speaking faster than the API can
+            // respond.
+            this.pendingFrames = frames;
+            debug("[GROQSTT] Request already in-flight — queuing frames for next slot");
+            return;
+        }
+
+        this.isProcessing = true;
+        try {
+            await this._doProcessUtterance(frames);
+        } finally {
+            this.isProcessing = false;
+
+            // If frames arrived while we were processing, run them now.
+            if (this.pendingFrames && this.running) {
+                const next = this.pendingFrames;
+                this.pendingFrames = null;
+                // Use void here — the recursive call manages isProcessing itself
+                // and we don't want to await it inside the finally block.
+                void this.processUtterance(next);
+            }
+        }
+    }
+
+    private async _doProcessUtterance(frames: Float32Array[]): Promise<void> {
         const totalLen = frames.reduce((n, f) => n + f.length, 0);
         if (totalLen === 0) return;
 

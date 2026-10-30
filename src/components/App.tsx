@@ -178,62 +178,84 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen relative overflow-hidden theme-${config.theme_color}`}>
-      {/* Dynamic Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-dark-900 via-dark-800 to-dark-700">
-        <div className="absolute inset-0 opacity-30" style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-        }}></div>
+    <div className={`dashboard-layout theme-${config.theme_color}`}>
+      {/* Dashboard Sidebar */}
+      <div className="dashboard-sidebar">
+        {/* Logo */}
+        <div className="sidebar-logo">
+          <img src={logo} alt="VRCTalk" className="w-8 h-8 object-contain" />
+        </div>
 
-        {/* Animated Background Elements */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-accent-300/10 rounded-full blur-3xl animate-float"></div>
-          <div className="absolute top-1/2 right-1/4 w-48 h-48 bg-accent-400/10 rounded-full blur-3xl animate-float animate-delay-300"></div>
-          <div className="absolute bottom-1/4 left-1/2 w-32 h-32 bg-accent-500/10 rounded-full blur-3xl animate-float animate-delay-500"></div>
+        {/* Sidebar Navigation */}
+        <div className="sidebar-nav">
+          {/* Home / Main View - always active */}
+          <button
+            className="sidebar-nav-item active"
+            title="Dashboard"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+          </button>
+
+          {/* History */}
+          <button
+            onClick={() => handleHistoryToggle()}
+            className="sidebar-nav-item"
+            title="History"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+
+          {/* Settings */}
+          <button
+            onClick={handleSettingsToggle}
+            className="sidebar-nav-item"
+            title="Settings"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+          </button>
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="sidebar-footer">
+          <span className="text-[10px] text-white/30 font-medium">v0.3.2</span>
         </div>
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 app-header py-2">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex justify-between items-center">
-            {/* Logo and Title */}
-            <div className="flex items-center space-x-4 animate-slide-down">
-              <div className="w-12 h-12 flex items-center justify-center">
-                <img src={logo} alt="VRCTalk Logo" className="w-10 h-10 object-contain" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white">
-                  VRC<span className="text-accent-300">Talk</span>
-                </h1>
-                <p className="text-dark-200 text-xs">Voice Translation</p>
-              </div>
-            </div>
-
-            {/* Version and Settings */}
-            <div className="flex items-center space-x-4 animate-slide-down animate-delay-100">
-              <span className="px-3 py-1 bg-accent-400/20 text-accent-300 text-xs font-medium rounded-full backdrop-blur-sm border border-accent-400/30">
-                v0.3.2
-              </span>
-              <button
-                onClick={handleSettingsToggle}
-                className="w-10 h-10 rounded-full bg-dark-800/80 border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-dark-700/80 hover:border-white/20 transition-all duration-300"
-                title="Settings"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                </svg>
-              </button>
+      {/* Main Content Area */}
+      <div className="dashboard-main">
+        {/* Top Bar */}
+        <div className="dashboard-topbar">
+          <div className="dashboard-topbar-left">
+            <div>
+              <h1 className="text-lg font-bold text-white leading-none">
+                VRC<span className="text-accent-300">Talk</span>
+              </h1>
+              <p className="text-[11px] text-white/40">Voice Translation</p>
             </div>
           </div>
-        </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="relative z-10 flex-1 px-3 py-2 sm:px-4 sm:py-3 lg:px-6 lg:py-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="animate-fade-in">
+          <div className="dashboard-topbar-center">
+            {/* Language selector and other controls are inside VRCTalk */}
+          </div>
+
+          <div className="dashboard-topbar-right">
+            <span className="px-3 py-1 bg-accent-400/20 text-accent-300 text-xs font-medium rounded-full backdrop-blur-sm border border-accent-400/30">
+              v0.3.2
+            </span>
+          </div>
+        </div>
+
+        {/* Body Content */}
+        <div className="dashboard-body">
+          {/* Center Content */}
+          <div className="dashboard-content animate-fade-in">
             <VRCTalk
               config={config}
               setConfig={setConfig}
@@ -244,7 +266,7 @@ const App: React.FC = () => {
             />
           </div>
         </div>
-      </main>
+      </div>
 
       {/* History Modal */}
       {showHistory && (

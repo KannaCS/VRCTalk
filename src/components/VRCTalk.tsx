@@ -119,11 +119,20 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
 
   // Ref to keep track of recognitionActive state inside event listeners
   const recognitionActiveRef = useRef(recognitionActive);
+  // Ref to keep config.selected_microphone current inside the devicechange
+  // handler closure (which is created once on mount and would otherwise capture
+  // a stale value for the lifetime of the component).
+  const selectedMicrophoneRef = useRef<string | null>(config.selected_microphone ?? null);
 
   // Keep the ref updated whenever recognitionActive changes
   useEffect(() => {
     recognitionActiveRef.current = recognitionActive;
   }, [recognitionActive]);
+
+  // Keep selectedMicrophoneRef in sync with config changes
+  useEffect(() => {
+    selectedMicrophoneRef.current = config.selected_microphone ?? null;
+  }, [config.selected_microphone]);
 
   // Update config when language selections change
   useEffect(() => {
@@ -318,6 +327,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
         info(`[SR] Whisper VAD threshold change detected: ${config.vad_threshold}`);
         whisperRecognizer.setVadThreshold(config.vad_threshold);
       }
+      // Propagate microphone change without switching recognizer type
+      if (whisperRecognizer.selectedMicrophoneId !== (config.selected_microphone ?? null)) {
+        info(`[SR] Whisper microphone change → ${config.selected_microphone || 'default'}`);
+        whisperRecognizer.set_microphone(config.selected_microphone ?? null);
+      }
     }
     // Handle Groq STT key and VAD changes
     else if (currentIsGroqSTT && shouldBeGroqSTT) {
@@ -328,8 +342,13 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
       }
       groqRecognizer.setPrompt(config.groq_stt_prompt || '');
       groqRecognizer.setModel(config.groq_stt_model || 'whisper-large-v3');
+      // Propagate microphone change without switching recognizer type
+      if (groqRecognizer.selectedMicrophoneId !== (config.selected_microphone ?? null)) {
+        info(`[SR] Groq STT microphone change → ${config.selected_microphone || 'default'}`);
+        groqRecognizer.set_microphone(config.selected_microphone ?? null);
+      }
     }
-  }, [config.recognizer, config.whisper_model, config.vad_threshold, config.groq_api_key, config.groq_stt_model, config.groq_stt_prompt]);
+  }, [config.recognizer, config.whisper_model, config.vad_threshold, config.groq_api_key, config.groq_stt_model, config.groq_stt_prompt, config.selected_microphone]);
 
   // Handle recognition status based on VRC mute status
   useEffect(() => {
@@ -786,8 +805,8 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
           const audioInputs = devices.filter(d => d.kind === 'audioinput');
           if (audioInputs.length > 0) {
             let micToUse = audioInputs[0];
-            if (config.selected_microphone) {
-              const specific = audioInputs.find(d => d.deviceId === config.selected_microphone);
+            if (selectedMicrophoneRef.current) {
+              const specific = audioInputs.find(d => d.deviceId === selectedMicrophoneRef.current);
               if (specific) micToUse = specific;
             }
             const label = micToUse.label?.trim();
@@ -798,7 +817,7 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
             }
             
             // Track the default device ID
-            if (!config.selected_microphone) {
+            if (!selectedMicrophoneRef.current) {
               lastDefaultDeviceId = audioInputs[0]?.deviceId || null;
             }
           }
@@ -833,11 +852,11 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
                   lastDefaultDeviceId = currentDefaultId;
                   
                   // If no specific mic is selected, restart to use new default
-                  if (!config.selected_microphone) {
+                  if (!selectedMicrophoneRef.current) {
                     globalSpeechRecognizer.restart();
                   } else {
                     // If specific mic was selected, check if it still exists
-                    const selectedStillExists = audioInputs.find(d => d.deviceId === config.selected_microphone);
+                    const selectedStillExists = audioInputs.find(d => d.deviceId === selectedMicrophoneRef.current);
                     if (!selectedStillExists) {
                       info(`[DEVICE] Selected microphone no longer available, switching to default`);
                       globalSpeechRecognizer.set_microphone(null);
@@ -1310,118 +1329,38 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
     </div>
   );
 
-  // UI component return - LinguaFlow-inspired layout
+  // UI component return - Dashboard-inspired layout
   return (
-    <div className={`flex flex-col gap-6 theme-${config.theme_color}`}>
-      {/* Centered Language Selector Header */}
-      <div className="flex items-center justify-center py-2 gap-3 flex-wrap">
-        <div className="language-selector-pill">
-          {/* Source Language Custom Dropdown */}
-          <div className="relative" ref={sourceDropdownRef}>
-            <button
-              onClick={() => { setSourceDropdownOpen(!sourceDropdownOpen); setTargetDropdownOpen(false); setSecondaryTargetDropdownOpen(false); }}
-              disabled={isChangingLanguage}
-              className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
-            >
-              <span>{langSource.find(l => l.code === sourceLanguage)?.name || sourceLanguage}</span>
-              <svg className={`w-3 h-3 transition-transform ${sourceDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {sourceDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
-                {langSource.map((lang, index) => (
-                  <button
-                    key={`source-${index}`}
-                    onClick={() => {
-                      handleSourceLanguageChange({ target: { value: lang.code } } as React.ChangeEvent<HTMLSelectElement>);
-                      setSourceDropdownOpen(false);
-                    }}
-                    className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${sourceLanguage === lang.code
-                        ? 'bg-accent-400/20 text-white font-medium'
-                        : 'text-white/80 hover:bg-white/10 hover:text-white'
-                      }`}
-                  >
-                    {lang.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={swapLanguages}
-            disabled={isChangingLanguage}
-            className="swap-btn"
-            title="Swap Languages"
-          >
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
-          </button>
-
-          {/* Primary Target Language Custom Dropdown */}
-          <div className="relative flex items-center gap-1.5" ref={targetDropdownRef}>
-            <span className="text-xs font-semibold text-accent-400 opacity-60">1st</span>
-            <button
-              onClick={() => { setTargetDropdownOpen(!targetDropdownOpen); setSourceDropdownOpen(false); setSecondaryTargetDropdownOpen(false); }}
-              disabled={isChangingLanguage}
-              className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
-            >
-              <span>{langTo.find(l => l.code === targetLanguage)?.name || targetLanguage}</span>
-              <svg className={`w-3 h-3 transition-transform ${targetDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {targetDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
-                {langTo.map((lang, index) => (
-                  <button
-                    key={`target-${index}`}
-                    onClick={() => {
-                      handleTargetLanguageChange({ target: { value: lang.code } } as React.ChangeEvent<HTMLSelectElement>);
-                      setTargetDropdownOpen(false);
-                    }}
-                    className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${targetLanguage === lang.code
-                        ? 'bg-accent-400/20 text-white font-medium'
-                        : 'text-white/80 hover:bg-white/10 hover:text-white'
-                      }`}
-                  >
-                    {lang.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Secondary Target Language - shown inline in same pill */}
-          {config.secondary_target_language && (
-            <>
-              {/* Secondary Target Language Dropdown */}
-              <div className="relative flex items-center gap-1.5" ref={secondaryTargetDropdownRef}>
-                <span className="text-xs font-semibold text-accent-400 opacity-60">2nd</span>
+    <div className={`flex gap-5 theme-${config.theme_color}`} style={{ minHeight: 'calc(100vh - 60px)' }}>
+      {/* Left Content Area */}
+      <div className="flex-1 flex flex-col gap-5 min-w-0">
+        {/* Top Section: Language Selector + Manual Input */}
+        <div className="flex flex-col gap-4">
+          {/* Language Controls Row */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="language-selector-pill">
+              {/* Source Language Custom Dropdown */}
+              <div className="relative" ref={sourceDropdownRef}>
                 <button
-                  onClick={() => { setSecondaryTargetDropdownOpen(!secondaryTargetDropdownOpen); setSourceDropdownOpen(false); setTargetDropdownOpen(false); }}
+                  onClick={() => { setSourceDropdownOpen(!sourceDropdownOpen); setTargetDropdownOpen(false); setSecondaryTargetDropdownOpen(false); }}
                   disabled={isChangingLanguage}
                   className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
                 >
-                  <span>{langTo.find(l => l.code === config.secondary_target_language)?.name || config.secondary_target_language}</span>
-                  <svg className={`w-3 h-3 transition-transform ${secondaryTargetDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <span>{langSource.find(l => l.code === sourceLanguage)?.name || sourceLanguage}</span>
+                  <svg className={`w-3 h-3 transition-transform ${sourceDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
-                {secondaryTargetDropdownOpen && (
-                  <div className="absolute top-full right-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
-                    {langTo.map((lang, index) => (
+                {sourceDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                    {langSource.map((lang, index) => (
                       <button
-                        key={`secondary-target-${index}`}
+                        key={`source-${index}`}
                         onClick={() => {
-                          const newConfig = { ...config, secondary_target_language: lang.code };
-                          setConfig(newConfig);
-                          saveConfig(newConfig);
-                          setSecondaryTargetDropdownOpen(false);
+                          handleSourceLanguageChange({ target: { value: lang.code } } as React.ChangeEvent<HTMLSelectElement>);
+                          setSourceDropdownOpen(false);
                         }}
-                        className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${config.secondary_target_language === lang.code
+                        className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${sourceLanguage === lang.code
                             ? 'bg-accent-400/20 text-white font-medium'
                             : 'text-white/80 hover:bg-white/10 hover:text-white'
                           }`}
@@ -1433,264 +1372,233 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
                 )}
               </div>
 
-              {/* Remove Secondary Language Button */}
               <button
-                onClick={() => {
-                  const newConfig = { ...config, secondary_target_language: null };
-                  setConfig(newConfig);
-                  saveConfig(newConfig);
-                  setSecondaryTranslatedText("");
-                }}
+                onClick={swapLanguages}
+                disabled={isChangingLanguage}
                 className="swap-btn"
-                title="Remove secondary target language"
+                title="Swap Languages"
               >
                 <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                 </svg>
               </button>
-            </>
-          )}
 
-          {/* Add Secondary Language Button */}
-          {!config.secondary_target_language && (
-            <button
-              onClick={() => {
-                const defaultSecondary = targetLanguage === 'en-US' ? 'ja' : 'en-US';
-                const newConfig = { ...config, secondary_target_language: defaultSecondary };
-                setConfig(newConfig);
-                saveConfig(newConfig);
-              }}
-              className="swap-btn"
-              title="Add secondary target language"
-            >
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          )}
-        </div>
-
-        {/* History Button */}
-        <button
-          onClick={() => onHistoryToggle?.()}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-accent-400/20 text-white/80 hover:text-white hover:bg-dark-700/50 transition-all text-sm"
-          title="View History"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>History</span>
-        </button>
-
-        {/* Translation Style Button */}
-        {(config.translator === 'gemini' || config.translator === 'groq') && (
-          <div className="relative" ref={styleDropdownRef}>
-            <button
-              onClick={() => setStyleDropdownOpen(!styleDropdownOpen)}
-              className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-accent-400/20 text-white/80 hover:text-white hover:bg-dark-700/50 transition-all text-sm"
-              title="Translation Style"
-            >
-              <span className="capitalize">{config.translation_style} Style</span>
-              <svg className={`w-3 h-3 transition-transform ${styleDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {styleDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 bg-dark-800/95 backdrop-blur-xl rounded-xl border border-accent-400/30 shadow-2xl overflow-hidden z-50 animate-slide-up min-w-[120px]">
-                {[
-                  { value: 'casual', emoji: '💬', label: 'Casual' },
-                  { value: 'formal', emoji: '🎩', label: 'Formal' },
-                  { value: 'polite', emoji: '🙏', label: 'Polite' },
-                  { value: 'friendly', emoji: '😊', label: 'Friendly' }
-                ].map((style) => (
-                  <button
-                    key={style.value}
-                    onClick={() => {
-                      const newConfig = { ...config, translation_style: style.value };
-                      setConfig(newConfig);
-                      saveConfig(newConfig).catch(err => error(`Error saving translation style: ${err}`));
-                      setStyleDropdownOpen(false);
-                    }}
-                    className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-all ${config.translation_style === style.value
-                      ? 'bg-accent-400/20 text-white'
-                      : 'text-white/70 hover:bg-accent-400/10 hover:text-white'
-                      }`}
-                  >
-                    <span>{style.emoji}</span>
-                    <span>{style.label}</span>
-                  </button>
-                ))}
+              {/* Primary Target Language Custom Dropdown */}
+              <div className="relative flex items-center gap-1.5" ref={targetDropdownRef}>
+                <span className="text-xs font-semibold text-accent-400 opacity-60">1st</span>
+                <button
+                  onClick={() => { setTargetDropdownOpen(!targetDropdownOpen); setSourceDropdownOpen(false); setSecondaryTargetDropdownOpen(false); }}
+                  disabled={isChangingLanguage}
+                  className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
+                >
+                  <span>{langTo.find(l => l.code === targetLanguage)?.name || targetLanguage}</span>
+                  <svg className={`w-3 h-3 transition-transform ${targetDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {targetDropdownOpen && (
+                  <div className="absolute top-full right-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                    {langTo.map((lang, index) => (
+                      <button
+                        key={`target-${index}`}
+                        onClick={() => {
+                          handleTargetLanguageChange({ target: { value: lang.code } } as React.ChangeEvent<HTMLSelectElement>);
+                          setTargetDropdownOpen(false);
+                        }}
+                        className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${targetLanguage === lang.code
+                            ? 'bg-accent-400/20 text-white font-medium'
+                            : 'text-white/80 hover:bg-white/10 hover:text-white'
+                          }`}
+                      >
+                        {lang.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Secondary Target Language - shown inline in same pill */}
+              {config.secondary_target_language && (
+                <>
+                  {/* Secondary Target Language Dropdown */}
+                  <div className="relative flex items-center gap-1.5" ref={secondaryTargetDropdownRef}>
+                    <span className="text-xs font-semibold text-accent-400 opacity-60">2nd</span>
+                    <button
+                      onClick={() => { setSecondaryTargetDropdownOpen(!secondaryTargetDropdownOpen); setSourceDropdownOpen(false); setTargetDropdownOpen(false); }}
+                      disabled={isChangingLanguage}
+                      className="flex items-center gap-1 px-3 py-1 text-white text-sm font-medium hover:bg-white/10 rounded-lg transition-all"
+                    >
+                      <span>{langTo.find(l => l.code === config.secondary_target_language)?.name || config.secondary_target_language}</span>
+                      <svg className={`w-3 h-3 transition-transform ${secondaryTargetDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {secondaryTargetDropdownOpen && (
+                      <div className="absolute top-full right-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-dark-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl z-50 animate-slide-up">
+                        {langTo.map((lang, index) => (
+                          <button
+                            key={`secondary-target-${index}`}
+                            onClick={() => {
+                              const newConfig = { ...config, secondary_target_language: lang.code };
+                              setConfig(newConfig);
+                              saveConfig(newConfig);
+                              setSecondaryTargetDropdownOpen(false);
+                            }}
+                            className={`w-full px-4 py-2.5 text-left text-sm transition-all first:rounded-t-xl last:rounded-b-xl ${config.secondary_target_language === lang.code
+                                ? 'bg-accent-400/20 text-white font-medium'
+                                : 'text-white/80 hover:bg-white/10 hover:text-white'
+                              }`}
+                          >
+                            {lang.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Remove Secondary Language Button */}
+                  <button
+                    onClick={() => {
+                      const newConfig = { ...config, secondary_target_language: null };
+                      setConfig(newConfig);
+                      saveConfig(newConfig);
+                      setSecondaryTranslatedText("");
+                    }}
+                    className="swap-btn"
+                    title="Remove secondary target language"
+                  >
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </>
+              )}
+
+              {/* Add Secondary Language Button */}
+              {!config.secondary_target_language && (
+                <button
+                  onClick={() => {
+                    const defaultSecondary = targetLanguage === 'en-US' ? 'ja' : 'en-US';
+                    const newConfig = { ...config, secondary_target_language: defaultSecondary };
+                    setConfig(newConfig);
+                    saveConfig(newConfig);
+                  }}
+                  className="swap-btn"
+                  title="Add secondary target language"
+                >
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
-        )}
 
-        {/* Microphone Settings Button */}
-        <button
-          onClick={() => {
-            invoke('open_sound_settings').catch(err =>
-              error(`Failed to open sound settings: ${err}`)
-            );
-          }}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-accent-400/20 text-white/80 hover:text-white hover:bg-dark-700/50 transition-all text-sm"
-          title="Open Windows Sound Settings"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-          </svg>
-          <span>Microphone</span>
-        </button>
-      </div>
-
-      {/* Live Session Badge */}
-      {/* Manual Input Field (Replaces Live Session Badge) */}
-      <div className="flex justify-center w-full max-w-2xl mx-auto px-4">
-        <div className="relative w-full">
-          <input
-            id="manual-input"
-            type="text"
-            className="w-full bg-dark-800/50 rounded-full px-6 py-3 text-white focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-white/30 border border-accent-400/20 text-center transition-all shadow-lg"
-            placeholder="Type here to translate manually..."
-            value={typedText}
-            onChange={e => setTypedText(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleManualSubmit();
-              }
-            }}
-            disabled={isChangingLanguage}
-          />
-          <button
-            onClick={handleManualSubmit}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full text-accent-400 hover:bg-accent-400/10 transition-colors"
-            disabled={typedText.trim().length === 0 || isChangingLanguage}
-            title="Send"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Two-Panel Transcript Layout */}
-      <div className={`grid gap-4 ${config.mode === 0 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 max-w-2xl mx-auto w-full'}`}>
-        {/* Source Panel */}
-        <div className={`transcript-card animate-slide-up ${detecting || isChangingLanguage ? 'card-active' : ''}`}>
-          <div className="transcript-card-header">
-            <span className="transcript-card-label">
-              {langSource[findLangSourceIndex(sourceLanguage)]?.name?.toUpperCase() || sourceLanguage.toUpperCase()} (SOURCE)
-            </span>
+          {/* Manual Input Field */}
+          <div className="relative w-full">
+            <input
+              id="manual-input"
+              type="text"
+              className="w-full rounded-xl px-5 py-3 text-white text-sm focus:outline-none placeholder-white/30 transition-all"
+              style={{ background: 'var(--dashboard-card)', border: '1px solid var(--dashboard-border)' }}
+              placeholder="Type here to translate manually..."
+              value={typedText}
+              onChange={e => setTypedText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleManualSubmit();
+                }
+              }}
+              disabled={isChangingLanguage}
+            />
             <button
-              onClick={() => copyToClipboard(sourceText, 'source')}
-              className="copy-btn"
-              title="Copy to clipboard"
+              onClick={handleManualSubmit}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg text-accent-400 hover:bg-accent-400/10 transition-colors"
+              disabled={typedText.trim().length === 0 || isChangingLanguage}
+              title="Send"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
             </button>
           </div>
-
-          <div className="transcript-card-content">
-            {sourceText || (
-              <span className="text-white/40 italic text-xl">
-                {isChangingLanguage ? 'Changing language…' : 'Waiting for speech…'}
-              </span>
-            )}
-          </div>
-
-          <div className="transcript-card-status">
-            {whisperStatus && (
-              <>
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
-                </svg>
-                <span>{whisperStatus}</span>
-              </>
-            )}
-            {!whisperStatus && detecting && (
-              <>
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
-                </svg>
-                <span>Listening...</span>
-              </>
-            )}
-          </div>
-
-          {/* Audio Visualizer in Source Panel */}
-          <div className="mt-4">
-            <AudioVisualizer active={audioActive || detecting} />
-          </div>
         </div>
 
-        {/* Translation Panels - only in translation mode */}
-        {config.mode === 0 && (
-          <>
-            {/* Primary Translation Panel */}
-            <div className={`transcript-card animate-slide-up animate-delay-100 ${translating ? 'card-active' : ''}`}>
-              <div className="transcript-card-header">
-                <span className="transcript-card-label">
-                  {langTo[findLangToIndex(targetLanguage)]?.name?.toUpperCase() || targetLanguage.toUpperCase()} (1st TARGET)
-                </span>
-                <div className="icon-btn-group">
-                  {/* Speaker icon (optional for TTS) */}
-                  <button className="icon-btn" title="Text to speech (coming soon)">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => copyToClipboard(translatedText, 'translation')}
-                    className="copy-btn"
-                    title="Copy to clipboard"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="transcript-card-content">
-                {translatedText || (
-                  <span className="text-white/40 italic text-xl">
-                    {isChangingLanguage ? 'Changing language…' : 'Translation updates dynamically'}
-                  </span>
-                )}
-              </div>
-
-              <div className="transcript-card-status">
-                {translating && (
-                  <>
-                    <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></div>
-                    <span>Translating...</span>
-                  </>
-                )}
-                {!translating && translatedText && (
-                  <span className="text-white/50">Translation updates dynamically</span>
-                )}
-              </div>
+        {/* Transcript Cards Grid */}
+        <div className="dashboard-section-title">TRANSCRIPTION</div>
+        <div className={`grid gap-4 ${config.mode === 0
+            ? (config.secondary_target_language ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1 lg:grid-cols-2')
+            : 'grid-cols-1'
+          }`}>
+          {/* Source Panel */}
+          <div className={`transcript-card animate-slide-up ${detecting || isChangingLanguage ? 'card-active' : ''}`}>
+            <div className="transcript-card-header">
+              <span className="transcript-card-label">
+                {langSource[findLangSourceIndex(sourceLanguage)]?.name?.toUpperCase() || sourceLanguage.toUpperCase()} (SOURCE)
+              </span>
+              <button
+                onClick={() => copyToClipboard(sourceText, 'source')}
+                className="copy-btn"
+                title="Copy to clipboard"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
             </div>
 
-            {/* Secondary Translation Panel - only when secondary language is enabled */}
-            {config.secondary_target_language && (
-              <div className={`transcript-card animate-slide-up animate-delay-200 ${translating ? 'card-active' : ''}`}>
+            <div className="transcript-card-content">
+              {sourceText || (
+                <span className="text-white/40 italic text-xl">
+                  {isChangingLanguage ? 'Changing language…' : 'Waiting for speech…'}
+                </span>
+              )}
+            </div>
+
+            <div className="transcript-card-status">
+              {whisperStatus && (
+                <>
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
+                  </svg>
+                  <span>{whisperStatus}</span>
+                </>
+              )}
+              {!whisperStatus && detecting && (
+                <>
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
+                  </svg>
+                  <span>Listening...</span>
+                </>
+              )}
+            </div>
+
+            {/* Audio Visualizer in Source Panel */}
+            <div className="mt-4">
+              <AudioVisualizer active={audioActive || detecting} />
+            </div>
+          </div>
+
+          {/* Translation Panels - only in translation mode */}
+          {config.mode === 0 && (
+            <>
+              {/* Primary Translation Panel */}
+              <div className={`transcript-card animate-slide-up animate-delay-100 ${translating ? 'card-active' : ''}`}>
                 <div className="transcript-card-header">
                   <span className="transcript-card-label">
-                    {langTo[findLangToIndex(config.secondary_target_language)]?.name?.toUpperCase() || config.secondary_target_language.toUpperCase()} (2nd TARGET)
+                    {langTo[findLangToIndex(targetLanguage)]?.name?.toUpperCase() || targetLanguage.toUpperCase()} (1st TARGET)
                   </span>
                   <div className="icon-btn-group">
+                    {/* Speaker icon (optional for TTS) */}
                     <button className="icon-btn" title="Text to speech (coming soon)">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                       </svg>
                     </button>
                     <button
-                      onClick={() => copyToClipboard(secondaryTranslatedText, 'secondary translation')}
+                      onClick={() => copyToClipboard(translatedText, 'translation')}
                       className="copy-btn"
                       title="Copy to clipboard"
                     >
@@ -1702,9 +1610,9 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
                 </div>
 
                 <div className="transcript-card-content">
-                  {secondaryTranslatedText || (
+                  {translatedText || (
                     <span className="text-white/40 italic text-xl">
-                      {isChangingLanguage ? 'Changing language…' : 'Secondary translation updates dynamically'}
+                      {isChangingLanguage ? 'Changing language…' : 'Translation updates dynamically'}
                     </span>
                   )}
                 </div>
@@ -1716,67 +1624,209 @@ const VRCTalk: React.FC<VRCTalkProps> = ({ config, setConfig, onNewMessage, onHi
                       <span>Translating...</span>
                     </>
                   )}
-                  {!translating && secondaryTranslatedText && (
+                  {!translating && translatedText && (
                     <span className="text-white/50">Translation updates dynamically</span>
                   )}
                 </div>
               </div>
-            )}
-          </>
-        )}
+
+              {/* Secondary Translation Panel - only when secondary language is enabled */}
+              {config.secondary_target_language && (
+                <div className={`transcript-card animate-slide-up animate-delay-200 ${translating ? 'card-active' : ''}`}>
+                  <div className="transcript-card-header">
+                    <span className="transcript-card-label">
+                      {langTo[findLangToIndex(config.secondary_target_language)]?.name?.toUpperCase() || config.secondary_target_language.toUpperCase()} (2nd TARGET)
+                    </span>
+                    <div className="icon-btn-group">
+                      <button className="icon-btn" title="Text to speech (coming soon)">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => copyToClipboard(secondaryTranslatedText, 'secondary translation')}
+                        className="copy-btn"
+                        title="Copy to clipboard"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="transcript-card-content">
+                    {secondaryTranslatedText || (
+                      <span className="text-white/40 italic text-xl">
+                        {isChangingLanguage ? 'Changing language…' : 'Secondary translation updates dynamically'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="transcript-card-status">
+                    {translating && (
+                      <>
+                        <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></div>
+                        <span>Translating...</span>
+                      </>
+                    )}
+                    {!translating && secondaryTranslatedText && (
+                      <span className="text-white/50">Translation updates dynamically</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Bottom Control Bar */}
-      <div className="control-bar">
-
-
-        <div className="control-bar-buttons">
-          {/* Refresh/Reset Button */}
+      {/* Right Panel - Controls & Status */}
+      <div className="dashboard-right-panel">
+        {/* Microphone Status */}
+        <div>
+          <div className="right-panel-widget-title">MICROPHONE</div>
+          <div className="mic-status-card">
+            <div className={`mic-status-indicator ${!recognitionActive ? 'inactive' : ''}`}></div>
+            <span className="mic-status-text">{defaultMicrophone}</span>
+          </div>
           <button
             onClick={() => {
-              setSourceText("");
-              setTranslatedText("");
-              setSecondaryTranslatedText("");
-              detectionQueue = [];
+              invoke('open_sound_settings').catch(err =>
+                error(`Failed to open sound settings: ${err}`)
+              );
             }}
-            className="control-btn"
-            title="Clear transcripts"
+            className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs transition-all"
+            style={{ background: 'var(--dashboard-card)', border: '1px solid var(--dashboard-border)', color: 'rgba(148,163,184,0.8)' }}
+            title="Open Windows Sound Settings"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
-          </button>
-
-          {/* Main Stop/Start Button */}
-          <button
-            onClick={toggleRecognition}
-            disabled={isChangingLanguage}
-            className={`control-btn-primary ${!recognitionActive ? 'inactive' : ''}`}
-          >
-            {recognitionActive ? (
-              <>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-                <span>Stop Transcribe</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                <span>Start Transcribe</span>
-              </>
-            )}
+            <span>Microphone Settings</span>
           </button>
         </div>
 
+        {/* Audio Activity */}
+        <div className="right-panel-widget">
+          <div className="right-panel-widget-title">AUDIO ACTIVITY</div>
+          <div className="flex justify-center py-2">
+            <AudioVisualizer active={audioActive || detecting} large />
+          </div>
+          <div className="text-center mt-2">
+            <span className="text-xs" style={{ color: (audioActive || detecting) ? 'var(--success-color)' : 'rgba(148,163,184,0.5)' }}>
+              {detecting ? 'Speech Detected' : audioActive ? 'Audio Active' : 'Idle'}
+            </span>
+          </div>
+        </div>
 
+        {/* Translation Style */}
+        {(config.translator === 'gemini' || config.translator === 'groq') && (
+          <div className="right-panel-widget" ref={styleDropdownRef}>
+            <div className="right-panel-widget-title">TRANSLATION STYLE</div>
+            <div className="relative">
+              <button
+                onClick={() => setStyleDropdownOpen(!styleDropdownOpen)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--dashboard-border)' }}
+              >
+                <span className="capitalize text-white/80">{config.translation_style} Style</span>
+                <svg className={`w-3 h-3 text-white/50 transition-transform ${styleDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {styleDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-dark-800/95 backdrop-blur-xl rounded-xl border border-accent-400/30 shadow-2xl overflow-hidden z-50 animate-slide-up">
+                  {[
+                    { value: 'casual', emoji: '💬', label: 'Casual' },
+                    { value: 'formal', emoji: '🎩', label: 'Formal' },
+                    { value: 'polite', emoji: '🙏', label: 'Polite' },
+                    { value: 'friendly', emoji: '😊', label: 'Friendly' }
+                  ].map((style) => (
+                    <button
+                      key={style.value}
+                      onClick={() => {
+                        const newConfig = { ...config, translation_style: style.value };
+                        setConfig(newConfig);
+                        saveConfig(newConfig).catch(err => error(`Error saving translation style: ${err}`));
+                        setStyleDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-all ${config.translation_style === style.value
+                        ? 'bg-accent-400/20 text-white'
+                        : 'text-white/70 hover:bg-accent-400/10 hover:text-white'
+                        }`}
+                    >
+                      <span>{style.emoji}</span>
+                      <span>{style.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* History Button */}
+        <button
+          onClick={() => onHistoryToggle?.()}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all"
+          style={{ background: 'var(--dashboard-card)', border: '1px solid var(--dashboard-border)', color: 'rgba(148,163,184,0.8)' }}
+          title="View History"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>History</span>
+        </button>
+
+        {/* Controls */}
+        <div>
+          <div className="right-panel-widget-title">CONTROLS</div>
+          <div className="control-bar" style={{ padding: 0 }}>
+            <div className="control-bar-buttons" style={{ width: '100%', justifyContent: 'center' }}>
+              {/* Refresh/Reset Button */}
+              <button
+                onClick={() => {
+                  setSourceText("");
+                  setTranslatedText("");
+                  setSecondaryTranslatedText("");
+                  detectionQueue = [];
+                }}
+                className="control-btn"
+                title="Clear transcripts"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+
+              {/* Main Stop/Start Button */}
+              <button
+                onClick={toggleRecognition}
+                disabled={isChangingLanguage}
+                className={`control-btn-primary ${!recognitionActive ? 'inactive' : ''}`}
+              >
+                {recognitionActive ? (
+                  <>
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                    <span>Stop</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    <span>Start</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-      
-      {/* Manual Input Section (hidden by default, scrollable) */}
-
-
     </div>
   );
 };

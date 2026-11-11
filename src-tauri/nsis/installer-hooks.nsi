@@ -1,3 +1,8 @@
+; Shown before the installer starts - explains the SmartScreen warning users already dismissed
+!macro NSIS_HOOK_PREINIT
+  MessageBox MB_OK|MB_ICONINFORMATION "Welcome to VRCTalk!$\n$\nIf Windows SmartScreen showed a warning before this installer ran, that is normal. VRCTalk is free and open-source and does not use a commercial code signing certificate.$\n$\nThe source code is available at: https://github.com/KannaCS/VRCTalk"
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ; Check if VC++ Runtime is installed by looking for the DLL
   IfFileExists "$SYSDIR\msvcp140.dll" VCRedistInstalled VCRedistNotInstalled

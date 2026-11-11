@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      # whisper-rs requires libclang on Windows
+      - name: Install LLVM and Clang (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17'
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Groq API keys bundled at build time (set these in GitHub repo secrets)
+          VITE_GROQ_API_KEYS: ${{ secrets.VITE_GROQ_API_KEYS }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: VRCTalk ${{ github.ref_name }}
+          releaseBody: |
+            ## Installation
+
+            > **Windows SmartScreen warning:** Because VRCTalk is not commercially code-signed, Windows may show a "Windows protected your PC" popup.
+            > This is expected for open-source apps without a paid certificate.
+            > To install: click **"More info"** → **"Run anyway"**.
+
+            See the [README](https://github.com/${{ github.repository }}#readme) for full setup instructions.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

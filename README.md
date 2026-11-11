@@ -16,8 +16,13 @@ VRCTalk is a desktop application that provides real-time speech recognition and 
 ## Installation
 
 1. Download the latest release from the [Releases](https://github.com/KannaCS/VRCTalk/releases) page
-2. Install the application by running the installer
-3. Launch VRCTalk
+2. Run the installer (`.exe`)
+3. **Windows SmartScreen warning:** You may see a *"Windows protected your PC"* popup. This is normal for open-source apps that are not commercially code-signed.
+   - Click **"More info"**
+   - Click **"Run anyway"**
+4. Launch VRCTalk
+
+> **Why does this happen?** Windows SmartScreen flags unsigned executables from unknown publishers. VRCTalk is open-source and free — buying a code signing certificate (~$300/year) is not feasible. The source code is fully auditable on this repository.
 
 ## Requirements
 
